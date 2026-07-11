@@ -155,8 +155,7 @@ display:
       }
 
       const bool ha_connected = id(api_status).state;
-      const bool switch_ready = id(ev_charge_switch).has_state();
-      const bool charger_on = switch_ready && id(ev_charge_switch).state;
+      const bool charger_on = ha_connected && id(ev_charge_switch).state;
       const bool power_ready = id(ev_charging_power).has_state();
       const float watts = power_ready ? id(ev_charging_power).state : 0.0f;
 
