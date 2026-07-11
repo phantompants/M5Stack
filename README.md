@@ -1,23 +1,55 @@
 # M5StickC EV Charger Control
 
-ESPHome configuration for an original M5Stick-C that displays EV charging power from Home Assistant and toggles an EV charger switch with Button A.
+ESPHome firmware for an original M5Stack M5Stick-C. The device shows EV charger power on the built-in TFT display and lets you toggle the charger from Button A through Home Assistant.
+
+## What It Does
+
+- Displays live EV charging power from Home Assistant.
+- Shows charger state as `ON` or `OFF`.
+- Uses Button A to toggle the charger switch.
+- Shows an offline message when the Home Assistant API is unavailable.
+- Keeps WiFi, API, OTA, and fallback hotspot credentials out of GitHub.
 
 ## Hardware
 
-- Board: M5Stack M5Stick-C
+- Board: M5Stack M5Stick-C, original ESP32 model
 - ESP32 board ID: `m5stick-c`
-- Display: ST7735 80x160 TFT on the built-in SPI pins
+- Display: built-in ST7735 80x160 TFT
 - Button A: GPIO37
 - Backlight: GPIO32
+- TFT SPI clock: GPIO13
+- TFT SPI MOSI: GPIO15
+- TFT chip select: GPIO5
+- TFT data/command: GPIO23
+- TFT reset: GPIO18
 
-## Home Assistant entities
+## Files
 
-The default configuration expects these Home Assistant entities:
+- `dark-orange-stick-ev.yaml`: ESPHome device configuration.
+- `secrets.example.yaml`: example secret keys to copy into your ESPHome secrets file.
+
+## Quick Start
+
+1. Copy the keys from `secrets.example.yaml` into your ESPHome `secrets.yaml`.
+2. Fill in your WiFi, API encryption, OTA, and fallback AP values.
+3. Check the Home Assistant entity IDs at the top of `dark-orange-stick-ev.yaml`.
+4. Flash the M5Stick-C over USB for the first install.
+5. Use OTA updates after the device is online.
+
+From the ESPHome CLI:
+
+```bash
+esphome run dark-orange-stick-ev.yaml
+```
+
+## Home Assistant Entities
+
+The default configuration expects these entities:
 
 - Charger switch: `switch.matter_ev_charge`
 - Power sensor: `sensor.smart_wi_fi_plug_power`
 
-Change them at the top of `dark-orange-stick-ev.yaml` if your entity IDs differ:
+If your entities have different IDs, edit the substitutions at the top of `dark-orange-stick-ev.yaml`:
 
 ```yaml
 substitutions:
@@ -27,31 +59,56 @@ substitutions:
 
 ## Secrets
 
-Copy the keys from `secrets.example.yaml` into your ESPHome `secrets.yaml` and fill in real values. Do not commit the real values to GitHub.
+Do not commit real secrets to this repository. Keep them in your ESPHome `secrets.yaml`:
 
-Important: if you previously committed or shared an ESPHome API encryption key, OTA password, WiFi password, or fallback AP password, rotate those values in Home Assistant/ESPHome before relying on the device.
-
-## Flashing
-
-From the ESPHome dashboard, add this repository/configuration or paste `dark-orange-stick-ev.yaml` into a new device, then install by USB for the first flash. After that, OTA updates should work once the device is online.
-
-From the ESPHome CLI:
-
-```bash
-esphome run dark-orange-stick-ev.yaml
+```yaml
+wifi_ssid: "YOUR_WIFI_SSID"
+wifi_password: "YOUR_WIFI_PASSWORD"
+dark_orange_stick_ev_api_key: "BASE64_32_BYTE_ESPHOME_API_KEY"
+dark_orange_stick_ev_ota_password: "CHANGE_ME_TO_A_LONG_RANDOM_PASSWORD"
+dark_orange_stick_ev_ap_password: "CHANGE_ME_TO_A_LONG_RANDOM_PASSWORD"
 ```
 
-## Fixes Compared With The Previous Config
+If an ESPHome API encryption key, OTA password, WiFi password, or fallback hotspot password has been shared or committed before, rotate it before using the device.
 
-- Adds the `board: m5stick-c` setting for the original M5Stick-C hardware.
-- Keeps `variant: esp32`, which matches the original ESP32 in the M5Stick-C.
-- Moves API, OTA, WiFi, and fallback AP credentials into ESPHome secrets.
-- Uses a Home Assistant switch component for `switch.matter_ev_charge`, so Button A can toggle the imported switch directly.
-- Changes the display to manual updates from a 2 second interval to avoid unnecessary redraw work.
-- Adds API/offline handling on the display so it is clearer whether Home Assistant is connected.
+## Notes About This Config
 
-## Notes
+The config specifies both:
 
-ESPHome 2026 documents `variant` as the recommended ESP32 selector, while PlatformIO still lists `m5stick-c` as the board ID for this hardware. Both are specified here so older and newer ESPHome builds have the board metadata they need.
+```yaml
+esp32:
+  board: m5stick-c
+  variant: esp32
+```
 
-The legacy ST7735 display component still supports `INITR_MINI160X80`, but ESPHome marks it as redundant because ST7735 support is moving under the MIPI SPI display stack. This config intentionally keeps ST7735 for the built-in M5Stick-C TFT because it matches the existing working pin mapping.
+`variant: esp32` matches the original ESP32 chip in the M5Stick-C. `board: m5stick-c` provides the PlatformIO board metadata for this specific device.
+
+The display uses ESPHome's ST7735 component with `INITR_MINI160X80`, which matches the built-in 80x160 TFT used by the M5Stick-C. ESPHome now recommends newer MIPI SPI display support for many ST7735 panels, but this config keeps the ST7735 driver because it matches the known M5Stick-C pin mapping.
+
+## Troubleshooting
+
+If the display is blank:
+
+- Confirm the device is an original M5Stick-C, not a M5Stick-C Plus or Plus2.
+- Confirm the backlight entity is on in Home Assistant.
+- Try flashing over USB once before relying on OTA.
+
+If Button A does not toggle charging:
+
+- Confirm Home Assistant shows the ESPHome device as connected.
+- Confirm `switch.matter_ev_charge` exists, or update `ev_charger_switch_entity`.
+- Check ESPHome logs for `Button press ignored: Home Assistant API is not connected`.
+
+If power always shows as waiting:
+
+- Confirm `sensor.smart_wi_fi_plug_power` exists, or update `ev_charger_power_entity`.
+- Confirm the sensor state is numeric watts.
+
+## Changes From The Original Broken Config
+
+- Added `board: m5stick-c` for the M5Stick-C hardware.
+- Moved all credentials into ESPHome secrets.
+- Imported the charger as a Home Assistant switch so Button A can toggle it directly.
+- Made display updates explicit on a 2 second interval instead of redrawing every 250 ms.
+- Added API/offline handling on the display.
+- Added setup and troubleshooting documentation.
