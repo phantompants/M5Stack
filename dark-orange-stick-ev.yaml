@@ -1,0 +1,187 @@
+substitutions:
+  device_name: dark-orange-stick-ev
+  friendly_name: Dark Orange Stick EV
+  ev_charger_switch_entity: switch.matter_ev_charge
+  ev_charger_power_entity: sensor.smart_wi_fi_plug_power
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    priority: -10
+    then:
+      - light.turn_on:
+          id: backlight
+          brightness: 85%
+          transition_length: 0s
+      - delay: 2s
+      - lambda: |-
+          id(boot_logo) = false;
+      - component.update: tft_display
+
+esp32:
+  board: m5stick-c
+  variant: esp32
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+    advanced:
+      sram1_as_iram: true
+
+logger:
+
+api:
+  encryption:
+    key: !secret dark_orange_stick_ev_api_key
+
+ota:
+  - platform: esphome
+    password: !secret dark_orange_stick_ev_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Dark Orange Stick EV"
+    password: !secret dark_orange_stick_ev_ap_password
+
+captive_portal:
+
+globals:
+  - id: boot_logo
+    type: bool
+    restore_value: false
+    initial_value: 'true'
+
+spi:
+  clk_pin: GPIO13
+  mosi_pin: GPIO15
+
+output:
+  - platform: ledc
+    pin: GPIO32
+    id: backlight_pwm
+    frequency: 1000 Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    id: backlight
+    name: "${friendly_name} Backlight"
+    restore_mode: ALWAYS_ON
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 12
+  - file: "gfonts://Roboto"
+    id: font_medium
+    size: 18
+  - file: "gfonts://Roboto"
+    id: font_large
+    size: 34
+
+switch:
+  - platform: homeassistant
+    id: ev_charge_switch
+    entity_id: ${ev_charger_switch_entity}
+    internal: true
+
+binary_sensor:
+  - platform: status
+    id: api_status
+    internal: true
+
+  - platform: gpio
+    id: button_a
+    pin:
+      number: GPIO37
+      inverted: true
+    filters:
+      - delayed_on: 20ms
+    on_press:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - switch.toggle: ev_charge_switch
+          else:
+            - logger.log: "Button press ignored: Home Assistant API is not connected"
+
+sensor:
+  - platform: homeassistant
+    id: ev_charging_power
+    entity_id: ${ev_charger_power_entity}
+    internal: true
+
+  - platform: wifi_signal
+    id: wifi_rssi
+    name: "${friendly_name} WiFi Signal"
+    update_interval: 60s
+
+interval:
+  - interval: 2s
+    then:
+      - lambda: |-
+          id(boot_logo) = false;
+      - component.update: tft_display
+
+display:
+  - platform: st7735
+    model: "INITR_MINI160X80"
+    cs_pin: GPIO5
+    dc_pin: GPIO23
+    reset_pin: GPIO18
+    rotation: 270
+    device_width: 80
+    device_height: 160
+    col_start: 26
+    row_start: 1
+    eight_bit_color: true
+    update_interval: never
+    id: tft_display
+    lambda: |-
+      it.fill(Color::BLACK);
+
+      if (id(boot_logo)) {
+        it.printf(40, 8, id(font_medium), Color::WHITE, TextAlign::TOP_CENTER, "M5Stick C");
+        it.printf(40, 32, id(font_small), Color(255, 180, 0), TextAlign::TOP_CENTER, "Booting...");
+        it.printf(40, 62, id(font_small), Color(255, 180, 0), TextAlign::TOP_CENTER, "   __");
+        it.printf(40, 76, id(font_small), Color(255, 180, 0), TextAlign::TOP_CENTER, "  /o \\__");
+        it.printf(40, 90, id(font_small), Color(255, 180, 0), TextAlign::TOP_CENTER, " (_____");
+        it.printf(40, 104, id(font_small), Color(255, 180, 0), TextAlign::TOP_CENTER, "  /  \\");
+        it.printf(40, 126, id(font_small), Color(180, 180, 180), TextAlign::TOP_CENTER, "EV Boot");
+        return;
+      }
+
+      const bool ha_connected = id(api_status).state;
+      const bool switch_ready = id(ev_charge_switch).has_state();
+      const bool charger_on = switch_ready && id(ev_charge_switch).state;
+      const bool power_ready = id(ev_charging_power).has_state();
+      const float watts = power_ready ? id(ev_charging_power).state : 0.0f;
+
+      it.printf(4, 4, id(font_small), Color(255, 128, 0), "EV CHARGER");
+      it.printf(76, 4, id(font_small), charger_on ? Color(0, 220, 120) : Color(180, 180, 180),
+                TextAlign::TOP_RIGHT, charger_on ? "ON" : "OFF");
+
+      if (!ha_connected) {
+        it.printf(40, 34, id(font_medium), Color::WHITE, TextAlign::TOP_CENTER, "Offline");
+        it.printf(40, 56, id(font_small), Color(180, 180, 180), TextAlign::TOP_CENTER, "No HA API");
+      } else if (power_ready) {
+        if (watts >= 1000.0f) {
+          it.printf(40, 26, id(font_large), Color::WHITE, TextAlign::TOP_CENTER, "%.1f", watts / 1000.0f);
+          it.printf(40, 62, id(font_medium), Color(255, 128, 0), TextAlign::TOP_CENTER, "kW");
+        } else {
+          it.printf(40, 26, id(font_large), Color::WHITE, TextAlign::TOP_CENTER, "%.0f", watts);
+          it.printf(40, 62, id(font_medium), Color(255, 128, 0), TextAlign::TOP_CENTER, "W");
+        }
+      } else {
+        it.printf(40, 34, id(font_medium), Color::WHITE, TextAlign::TOP_CENTER, "Waiting");
+        it.printf(40, 56, id(font_small), Color(180, 180, 180), TextAlign::TOP_CENTER, "for power");
+      }
+
+      it.printf(40, 78, id(font_small), Color(180, 180, 180), TextAlign::TOP_CENTER, "A toggles charge");
+      if (id(wifi_rssi).has_state()) {
+        it.printf(40, 96, id(font_small), Color(120, 120, 120), TextAlign::TOP_CENTER,
+                  "WiFi %.0f dBm", id(wifi_rssi).state);
+      }
