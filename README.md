@@ -279,7 +279,8 @@ platformio run -e m5stack-core2 -t upload --upload-port COMx
 
 **Controls:** the three touch buttons under the screen are **< PREV**, the
 page's action (shown in yellow in the footer) and **NEXT >**. Hold the middle
-button to turn the screen off; touch anywhere to turn it back on.
+button to turn the screen off; touch anywhere to turn it back on. The screen
+also turns itself off after 15 minutes with no input.
 
 | Page | Shows | Middle button / touch |
 |---|---|---|
@@ -510,7 +511,7 @@ latest internet weather and the ID of every probe it can see.
 | `A` on WAYPOINT | Save a waypoint immediately from the selected GPS source |
 | `N`, `T`, `F` on WAYPOINT | Edit the last waypoint's name, note or photo reference |
 | `V` on WAYPOINT | Toggle last-waypoint details |
-| `S` | Turn the display off/on without stopping GPS monitoring |
+| `S` | Turn the display off without stopping GPS monitoring. It also turns off by itself after 15 minutes with no input; any key or the G0 button wakes it (that press does nothing else) |
 | `-` / `=` | Decrease/increase display brightness |
 
 The selected page is remembered across restarts. The Cardputer battery

@@ -190,6 +190,7 @@ bool anyInputHeld() {
 }
 
 void handleControls() {
+  if (anyInputHeld()) lastInputMs = millis();
   if (!screenOn) {
     if (anyInputHeld()) {
       setScreen(true);

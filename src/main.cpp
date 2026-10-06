@@ -371,6 +371,10 @@ bool sdMounted = false;
 bool locationTimeStarted = false;
 bool placeResolverStarted = false;
 bool screenOn = true;
+// Screen saver: the display turns off after this long with no key, button or
+// touch input. Logging carries on; the next press only wakes the screen.
+constexpr uint32_t kScreenSaverMs = 15UL * 60UL * 1000UL;
+uint32_t lastInputMs = 0;
 bool immediateLogRequested = false;
 bool stopCandidateActive = false;
 bool haveSeenValidFix = false;
@@ -1755,7 +1759,28 @@ void moveDashboardPage(int direction) {
       static_cast<DashboardPage>((current + direction + count) % count));
 }
 
+void setScreen(bool on) {
+  screenOn = on;
+  if (on) {
+    M5Cardputer.Display.wakeup();
+    M5Cardputer.Display.setBrightness(displayBrightness);
+    haveDashboardFrameHash = false;
+    lastDisplayMs = 0;
+  } else {
+    M5Cardputer.Display.sleep();
+  }
+}
+
 void handleControls() {
+  const bool keyDown =
+      M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed();
+  const bool inputDown = keyDown || M5Cardputer.BtnA.wasPressed();
+  if (inputDown) lastInputMs = millis();
+  if (!screenOn) {
+    // The press that wakes the screen must not also act.
+    if (inputDown) setScreen(true);
+    return;
+  }
   if (wifiSetup.active()) {
     wifiSetup.handleInput(locationTime);
     if (!wifiSetup.active()) {
@@ -1778,15 +1803,7 @@ void handleControls() {
       (keys.space || keys.enter || M5Cardputer.Keyboard.isKeyPressed(';'))) {
     dinoGame.press(millis());
   } else if (M5Cardputer.Keyboard.isKeyPressed('s')) {
-    screenOn = !screenOn;
-    if (screenOn) {
-      M5Cardputer.Display.wakeup();
-      M5Cardputer.Display.setBrightness(displayBrightness);
-      haveDashboardFrameHash = false;
-      lastDisplayMs = 0;
-    } else {
-      M5Cardputer.Display.sleep();
-    }
+    setScreen(false);  // Any key turns it back on.
   } else if (keys.tab || keys.right ||
              M5Cardputer.Keyboard.isKeyPressed(']')) {
     moveDashboardPage(1);
@@ -1822,12 +1839,6 @@ void handleControls() {
     waypointShowLast = !waypointShowLast;
     lastDisplayMs = 0;
   } else if (M5Cardputer.Keyboard.isKeyPressed('w')) {
-    if (!screenOn) {
-      screenOn = true;
-      M5Cardputer.Display.wakeup();
-      M5Cardputer.Display.setBrightness(displayBrightness);
-      haveDashboardFrameHash = false;
-    }
     wifiSetup.open();
   } else if (M5Cardputer.Keyboard.isKeyPressed('k')) {
     if (sdMounted && clockIsReady()) kmlExporter.requestScan();
@@ -2612,6 +2623,17 @@ void drawStatus(const GpsSnapshot& sample, uint32_t nowMs, time_t nowUtc) {
 #include "Core2Ui.inc"
 #endif  // JP226_CORE2
 
+void updateScreenSaver(uint32_t nowMs) {
+  // Don't blank the screen while someone is typing a WiFi password or note.
+#if !JP226_CORE2
+  if (wifiSetup.active() || waypointEditor != WaypointEditor::Closed) {
+    lastInputMs = nowMs;
+    return;
+  }
+#endif
+  if (screenOn && nowMs - lastInputMs >= kScreenSaverMs) setScreen(false);
+}
+
 // Board, IMU, internal I2C devices and radio links, printed every 10 s from
 // 5 s after boot so a serial monitor opened after start-up still sees them.
 // Worst time per loop() step since the last hardware report, to find what
@@ -2817,6 +2839,7 @@ void loop() {
   markLoopStep(StepControls);
 
   const uint32_t nowMs = millis();
+  updateScreenSaver(nowMs);
   updateGpsReceivers(nowMs);
   markLoopStep(StepGps);
   imu.update(nowMs);
