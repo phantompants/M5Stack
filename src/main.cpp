@@ -1772,8 +1772,12 @@ void setScreen(bool on) {
 }
 
 void handleControls() {
-  const bool keyDown =
-      M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed();
+  // Count held keys here rather than calling Keyboard.isChange(), which
+  // clears the change flag and would hide the key from the handlers below.
+  static size_t heldKeyCount = 0;
+  const size_t keyCount = M5Cardputer.Keyboard.keyList().size();
+  const bool keyDown = keyCount > heldKeyCount;
+  heldKeyCount = keyCount;
   const bool inputDown = keyDown || M5Cardputer.BtnA.wasPressed();
   if (inputDown) lastInputMs = millis();
   if (!screenOn) {
