@@ -544,6 +544,15 @@ void setup() {
   config.external_rtc = false;
   M5.begin(config);
   Serial.begin(115200);
+  // The Atomic SPK base's amplifier listens on G22 (bit clock), G21 (word
+  // select) and G25 (data). Left floating, or with M5.begin()'s internal I2C
+  // bus on G21/G25, it plays the noise as a distorted buzz. Hold them low so
+  // the unclocked amp stays silent; only the base's SD card is used here.
+  M5.In_I2C.release();
+  for (const int pin : {21, 22, 25}) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, LOW);
+  }
   M5.Led.setBrightness(40);
 
   preferences.begin("blackbox", false);
