@@ -611,7 +611,8 @@ press Enter again to save and connect. Use `R` to rescan and `Q` to close the
 page. Fn+backtick acts as Escape/back while entering a password.
 
 Credentials entered on the device are stored in ESP32 non-volatile storage and
-reused after restarts. The password is masked on screen. Like most ESP32
+reused after restarts. The password is masked on screen; press Tab while
+typing it to show or hide it. Like most ESP32
 applications, NVS is not encrypted unless flash encryption has separately been
 enabled, so physical access to the device should be treated as access to its
 saved credentials.

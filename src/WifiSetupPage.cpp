@@ -99,6 +99,11 @@ void WifiSetupPage::handleInput(LocationTime& locationTime) {
       markDirty();
       return;
     }
+    if (keys.tab) {
+      showPassword_ = !showPassword_;
+      markDirty();
+      return;
+    }
     if (keys.del || keys.backspace) {
       if (!password_.isEmpty()) password_.remove(password_.length() - 1);
       markDirty();
@@ -135,6 +140,7 @@ void WifiSetupPage::handleInput(LocationTime& locationTime) {
       markDirty();
     } else if (networkCount_ > 0 && keys.enter) {
       password_ = "";
+      showPassword_ = false;
       if (networks_[selected_].secure) {
         state_ = State::Password;
         markDirty();
@@ -268,18 +274,22 @@ void WifiSetupPage::drawPassword() {
   display.println("Network:");
   display.println(clipped(networks_[selected_].ssid, 19));
   display.println("Password:");
-  String masked;
+  // Show the last 16 characters, as asterisks unless Tab revealed them.
   const size_t visible = password_.length() > 16 ? 16 : password_.length();
-  for (size_t i = 0; i < visible; ++i) masked += '*';
-  if (password_.length() > visible) masked = ".." + masked;
+  String shown = password_.substring(password_.length() - visible);
+  if (!showPassword_) {
+    for (size_t i = 0; i < visible; ++i) shown.setCharAt(i, '*');
+  }
+  if (password_.length() > visible) shown = ".." + shown;
   display.setTextColor(kAccent, kBackground);
-  display.println(masked + "_");
+  display.println(shown + "_");
   display.setTextColor(kForeground, kBackground);
   display.setTextSize(2);
   display.println("ENTER: CONNECT");
   display.setTextSize(1);
-  display.printf("%u/63  Backspace:delete  Fn+`:back",
-                 static_cast<unsigned>(password_.length()));
+  display.printf("%u/63 Tab:%s Bksp:del Fn+`:back",
+                 static_cast<unsigned>(password_.length()),
+                 showPassword_ ? "hide" : "show");
 }
 
 void WifiSetupPage::drawConnecting() {

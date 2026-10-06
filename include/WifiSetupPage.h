@@ -51,6 +51,7 @@ class WifiSetupPage {
   size_t networkCount_ = 0;
   size_t selected_ = 0;
   String password_;
+  bool showPassword_ = false;  // Tab toggles while typing the password.
   String resultMessage_;
   uint32_t connectStartedMs_ = 0;
   uint32_t lastFrameHash_ = 0;
