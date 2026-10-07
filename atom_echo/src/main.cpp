@@ -578,7 +578,7 @@ void setup() {
     speaker.pin_bck = GPIO_NUM_22;
     speaker.pin_ws = GPIO_NUM_21;
     speaker.pin_data_out = GPIO_NUM_25;
-    speaker.magnification = 16;
+    speaker.magnification = 12;  // 16 clipped loud syllables; 8 was too quiet.
   } else {
     speaker.pin_bck = GPIO_NUM_19;
     speaker.pin_ws = GPIO_NUM_33;
