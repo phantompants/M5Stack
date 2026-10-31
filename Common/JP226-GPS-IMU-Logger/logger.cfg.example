@@ -4,6 +4,17 @@
 wifi_ssid=Your Starlink WiFi name
 wifi_password=Your Starlink WiFi password
 
+# Optional read-only Wi-Fi ELM327 adapter (Ranger CAN 11-bit / 500 kbit/s).
+# Connect to the adapter's Wi-Fi network using W. Set these to its
+# documented TCP address/port (common defaults are 192.168.0.10:35000).
+# This does not support Bluetooth adapters such as vLinker FS.
+obd_wifi_host=192.168.0.10
+obd_wifi_port=35000
+# Experimental Ranger BCM tyre pressures and sensor temperatures. Requires
+# factory TPMS, accessible BCM and an adapter with working ISO-TP support.
+# Compare with the dashboard before relying on the readings. 0 disables it.
+obd_ford_tpms=1
+
 # When true, a stationary logger with a fresh GPS position and Internet access
 # asks timeapi.io for the local timezone and saves the result for offline use.
 timezone_auto=true

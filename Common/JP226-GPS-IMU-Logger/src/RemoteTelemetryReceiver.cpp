@@ -22,7 +22,9 @@ uint32_t saturatedAdd(uint32_t left, uint32_t right) {
 
 }  // namespace
 
-bool RemoteTelemetryReceiver::begin(const uint8_t allowedMac[6]) {
+bool RemoteTelemetryReceiver::begin(const uint8_t allowedMac[6],
+                                     bool allowBlackBoxAndProbes) {
+  allowBlackBoxAndProbes_ = allowBlackBoxAndProbes;
   std::memcpy(allowedMac_, allowedMac, sizeof(allowedMac_));
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {
@@ -137,6 +139,7 @@ void RemoteTelemetryReceiver::receive(const esp_now_recv_info_t* info,
   }
   if (type == telemetry::PacketType::BlackBoxStatus &&
       length == static_cast<int>(sizeof(telemetry::BlackBoxStatusPacket))) {
+    if (!allowBlackBoxAndProbes_) return;
     telemetry::BlackBoxStatusPacket packet{};
     std::memcpy(&packet, data, sizeof(packet));
     if (!telemetry::validatePacket(packet,
@@ -152,6 +155,7 @@ void RemoteTelemetryReceiver::receive(const esp_now_recv_info_t* info,
   }
   if (type == telemetry::PacketType::TemperatureReport &&
       length == static_cast<int>(sizeof(telemetry::TemperatureReportPacket))) {
+    if (!allowBlackBoxAndProbes_) return;
     telemetry::TemperatureReportPacket packet{};
     std::memcpy(&packet, data, sizeof(packet));
     if (!telemetry::validatePacket(packet,

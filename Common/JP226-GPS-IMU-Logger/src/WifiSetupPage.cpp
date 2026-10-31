@@ -2,6 +2,7 @@
 
 #include <M5Cardputer.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 #include "LocationTime.h"
 
@@ -34,18 +35,52 @@ uint32_t frameBufferHash(const M5Canvas& canvas) {
 
 void WifiSetupPage::open() {
   if (active()) return;
+  if (!scanDiagnosticsRegistered_) {
+    WiFi.onEvent([this](arduino_event_id_t, arduino_event_info_t info) {
+      scanEventCount_.store(info.wifi_scan_done.number);
+      scanEventStatus_.store(info.wifi_scan_done.status);
+      Serial.printf("Wi-Fi scan event: status=%lu count=%u id=%u\n",
+                    static_cast<unsigned long>(info.wifi_scan_done.status),
+                    info.wifi_scan_done.number, info.wifi_scan_done.scan_id);
+    }, ARDUINO_EVENT_WIFI_SCAN_DONE);
+    scanDiagnosticsRegistered_ = true;
+  }
+  savedAutoReconnect_ = WiFi.getAutoReconnect();
   startScan();
 }
 
 void WifiSetupPage::startScan() {
+  stopScan();
+  scanError_ = false;
+  passiveScan_ = false;
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(false);
+  // A saved-SSID connection attempt takes priority over a user scan. Stop
+  // that attempt without erasing credentials or shutting down ESP-NOW.
+  if (WiFi.status() != WL_CONNECTED) WiFi.disconnect(false, false);
   WiFi.scanDelete();
   networkCount_ = 0;
   selected_ = 0;
-  state_ = State::Scanning;
+  state_ = State::PreparingScan;
+  scanStartedMs_ = millis();
   resultMessage_ = "Scanning for Wi-Fi...";
   haveFrameHash_ = false;
-  WiFi.scanNetworks(true, true);
+  markDirty();
+}
+
+void WifiSetupPage::stopScan() {
+  // Don't try to stop the driver's internal saved-network connection scan.
+  if (state_ == State::Scanning && WiFi.scanComplete() == WIFI_SCAN_RUNNING)
+    esp_wifi_scan_stop();
+}
+
+void WifiSetupPage::scanFailed(const char* message) {
+  scanError_ = true;
+  stopScan();
+  WiFi.scanDelete();
+  resultMessage_ = message;
+  state_ = State::Result;
+  Serial.printf("Wi-Fi scan: %s\n", message);
   markDirty();
 }
 
@@ -79,8 +114,22 @@ void WifiSetupPage::collectScanResults(int count) {
     ++networkCount_;
   }
   WiFi.scanDelete();
+  Serial.printf("Wi-Fi scan: %s pass, %d access points, %u visible networks\n",
+                passiveScan_ ? "passive" : "active", count,
+                static_cast<unsigned>(networkCount_));
+  if (networkCount_ == 0 && !passiveScan_) {
+    // Some APs do not answer probe requests. Listen for beacons on a second
+    // all-channel pass before concluding that the area has no named APs.
+    passiveScan_ = true;
+    state_ = State::PreparingScan;
+    scanStartedMs_ = millis();
+    markDirty();
+    return;
+  }
   state_ = State::Networks;
   resultMessage_ = networkCount_ == 0 ? "No networks found" : "";
+  Serial.printf("Wi-Fi scan: complete, %d access points, %u visible networks\n",
+                count, static_cast<unsigned>(networkCount_));
   markDirty();
 }
 
@@ -127,10 +176,13 @@ void WifiSetupPage::handleInput(LocationTime& locationTime) {
     return;
   }
 
+  if (M5Cardputer.Keyboard.isKeyPressed('r')) {
+    startScan();
+    return;
+  }
+
   if (state_ == State::Networks) {
-    if (M5Cardputer.Keyboard.isKeyPressed('r')) {
-      startScan();
-    } else if (networkCount_ > 0 &&
+    if (networkCount_ > 0 &&
                (keys.up || M5Cardputer.Keyboard.isKeyPressed(','))) {
       selected_ = selected_ == 0 ? networkCount_ - 1 : selected_ - 1;
       markDirty();
@@ -149,9 +201,7 @@ void WifiSetupPage::handleInput(LocationTime& locationTime) {
       }
     }
   } else if (state_ == State::Result) {
-    if (M5Cardputer.Keyboard.isKeyPressed('r')) {
-      startScan();
-    } else if (keys.enter) {
+    if (keys.enter) {
       close();
     }
   }
@@ -168,14 +218,30 @@ void WifiSetupPage::beginConnection(LocationTime& locationTime) {
 }
 
 void WifiSetupPage::update(uint32_t nowMs) {
-  if (state_ == State::Scanning) {
+  if (state_ == State::PreparingScan) {
+    // Let the disconnect event finish before starting the asynchronous scan.
+    if (nowMs - scanStartedMs_ < 250) return;
+    scanEventStatus_.store(kNoScanEvent);
+    scanEventCount_.store(0);
+    const int result = WiFi.scanNetworks(true, true, passiveScan_, 400, 0);
+    Serial.printf("Wi-Fi scan: start returned %d\n", result);
+    scanStartedMs_ = nowMs;
+    if (result >= 0) collectScanResults(result);
+    else if (result == WIFI_SCAN_RUNNING) state_ = State::Scanning;
+    else scanFailed("Scan could not start. Press R.");
+  } else if (state_ == State::Scanning) {
     const int result = WiFi.scanComplete();
-    if (result >= 0) {
+    const uint32_t status = scanEventStatus_.load();
+    if (status != kNoScanEvent && status != 0) {
+      scanFailed("Scan interrupted. Press R.");
+    } else if (result == 0 && status == 0 && scanEventCount_.load() > 0) {
+      scanFailed("Cannot read scan results. Press R.");
+    } else if (result >= 0 && status == 0) {
       collectScanResults(result);
     } else if (result == WIFI_SCAN_FAILED) {
-      resultMessage_ = "Scan failed - press R to retry";
-      state_ = State::Networks;
-      markDirty();
+      scanFailed("Wi-Fi scan failed. Press R.");
+    } else if (nowMs - scanStartedMs_ >= kScanTimeoutMs) {
+      scanFailed("Wi-Fi scan timed out. Press R.");
     }
   } else if (state_ == State::Connecting) {
     if (WiFi.status() == WL_CONNECTED) {
@@ -209,8 +275,9 @@ void WifiSetupPage::draw(uint32_t nowMs) {
   display.setTextColor(kForeground, kBackground);
 
   switch (state_) {
+    case State::PreparingScan:
     case State::Scanning:
-      display.println("Scanning nearby");
+      display.println(passiveScan_ ? "Retrying scan..." : "Scanning nearby");
       display.println("Wi-Fi networks...");
       display.setTextColor(kSuccess, kBackground);
       display.println("Logging continues");
@@ -247,7 +314,10 @@ void WifiSetupPage::drawNetworks() {
   display.setTextSize(2);
   if (networkCount_ == 0) {
     display.setTextColor(kWarning, kBackground);
-    display.println("No networks found");
+    display.println("No named networks");
+    display.setTextSize(1);
+    display.println("2.4 GHz only; active + passive tried");
+    display.println("R: retry  Q: quit");
   } else {
     size_t first = selected_ >= kVisibleNetworks
                        ? selected_ - kVisibleNetworks + 1
@@ -306,6 +376,19 @@ void WifiSetupPage::drawConnecting() {
 
 void WifiSetupPage::drawResult() {
   auto& display = *canvas_;
+  if (scanError_) {
+    display.setTextSize(2);
+    display.setTextColor(kWarning, kBackground);
+    display.println("SCAN ERROR");
+    display.setTextSize(1);
+    display.println(resultMessage_);
+    display.println("2.4 GHz Wi-Fi networks only");
+    display.setTextSize(2);
+    display.setTextColor(kForeground, kBackground);
+    display.drawString("ENTER/Q: QUIT", 2, 91);
+    display.drawString("R: START AGAIN", 2, 108);
+    return;
+  }
   display.setTextSize(2);
   display.setTextColor(WiFi.status() == WL_CONNECTED ? kSuccess : kWarning,
                        kBackground);
@@ -322,7 +405,7 @@ void WifiSetupPage::drawResult() {
   } else {
     display.setTextColor(kForeground, kBackground);
     display.setTextSize(1);
-    display.println("Check password or signal.");
+    display.println(resultMessage_);
   }
   display.setTextColor(kForeground, kBackground);
   display.setTextSize(2);
@@ -331,7 +414,9 @@ void WifiSetupPage::drawResult() {
 }
 
 void WifiSetupPage::close() {
+  stopScan();
   WiFi.scanDelete();
+  WiFi.setAutoReconnect(savedAutoReconnect_);
   password_ = "";
   state_ = State::Closed;
   haveFrameHash_ = false;

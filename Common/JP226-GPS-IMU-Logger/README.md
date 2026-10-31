@@ -7,7 +7,10 @@ its own build with a touch interface:
 
 - Cardputer ADV: logs the onboard BMI270 accelerometer and gyroscope.
 - Original Cardputer: has no IMU of its own; leave the IMU fields empty
-  (`imu_available=0`) or take motion data from an AtomS3.
+  (`imu_available=0`) or take motion data from an AtomS3. Its profile excludes
+  the black-box backup and external temperature sensors. BLACK BOX and
+  WEATHER pages are hidden, probe detection is disabled, and probe CSV fields
+  stay empty. Vehicle temperatures read over OBD are still available.
 - Core2: touch-screen logger with a Grove GPS on a DIN base's Port B. Uses its
   own IMU where fitted, or an AtomS3's (see [M5Stack Core2
   version](#m5stack-core2-version)).
@@ -59,6 +62,11 @@ up from `v0.10` (`v0.11`, `v0.12`, ...); `v1.0` will be the first public
 release, once it has been tested on every logger including the Cardputer ADV. The number lives in
 `shared/Version.h`; the commit and date are stamped in at build time by
 `shared/version.py`.
+
+The current firmware version is **v0.19**. Increment `version::kNumber` in
+`shared/Version.h` and update this version reference for each changed firmware
+revision before building/flashing it. Rebuilding or retrying an unchanged
+revision keeps the same version number.
 
 The Atom Echo cannot show the dinosaur, so it speaks for it instead: "T-Rex
 says, rawr! Is logging" or "T-Rex says, rawr! Not logging". Short arms, big
@@ -231,7 +239,11 @@ The build artifacts are generated under `.pio/build/m5stack-stamps3/`:
   USB recovery/first-time flashing. Do not choose this one for Launcher's normal
   SD install workflow.
 
-Prebuilt copies from the verified build are in `dist/`.
+Prebuilt Cardputer v0.19 copies from the verified build are in `dist/`.
+These are the images flashed to and boot-tested on the original Cardputer v1;
+live Ranger tyre pressures still need vehicle testing. The Core2 factory
+image remains the older v0.16 build. See [dist/README.md](dist/README.md) for
+image versions and checksums.
 
 ### Build and flash the AtomS3 remote
 
@@ -418,7 +430,7 @@ edit the phrases in `atom_echo/tools/make_clips.ps1` and run it from the
 ## Atom Lite black box
 
 `atom_blackbox/` turns an M5Stack Atom Lite on an Atomic SPK base into a
-backup logger for a Cardputer (v1 or ADV). The Cardputer sends it a position
+backup logger for a Cardputer ADV. The ADV sends it a position
 report once a second, and it writes them to daily CSV files in `/blackbox/` on
 the base's microSD card: time, position, speed, heading, satellites, fix and
 the IMU readings. If the Cardputer's own card fails or fills up, the trip is
@@ -426,13 +438,13 @@ still on the black box. Unlike the Atom Echo, the Atom Lite has nothing on the
 base's SD pins, so the card is safe to use here.
 
 - **Choose its logger:** hold the button and press the small reset button on
-  the side. It toggles between the Cardputer v1 (blinks magenta) and the
-  Cardputer ADV (blinks cyan); a normal start blinks the current choice once.
+  the side and select Cardputer ADV (cyan). The accessory firmware's legacy
+  Cardputer v1 choice (magenta) is not supported by the v1 logger profile.
 - **Button:** tap to save a `BLACKBOX` waypoint on the Cardputer (green flash
   when saved, red if not).
 - **Light:** blue blink while searching, green while recording, amber when
   linked but not recording, red blink for an SD card problem.
-- **On the Cardputer:** the BLACK BOX page shows whether it is linked and
+- **On the Cardputer ADV:** the BLACK BOX page shows whether it is linked and
   recording, its SD card status and free space, rows written and today's file.
 
 Rows are written in batches of ten (or every ten seconds) to spare the card.
@@ -444,7 +456,7 @@ platformio run -d atom_blackbox -t upload --upload-port COMx
 
 ## Temperature probes and weather
 
-Every device with a free Grove port can read DS18B20 waterproof temperature
+The supported devices listed below can read DS18B20 waterproof temperature
 probes (the common stainless steel probes on a 1 m lead), and the logger can
 add the local weather from the internet. Both are logged with every CSV row.
 
@@ -470,8 +482,10 @@ probes can share one port, wired in parallel.
 | Core2 | Port A (red, on the Core2) | The GPS is on the DIN base's Port B |
 | Cardputer ADV | Grove, when the Cap LoRa-1262 provides the GPS | A probe found at start-up turns the Grove GPS off for that session |
 
-Not available on the original Cardputer or the AtomS3s, whose Grove ports carry
-power between the two.
+The original Cardputer v1 excludes temperature probes, including readings
+forwarded by a Dial, Echo or black box. It does not scan its Grove pins for
+probes; the Grove port remains available for GPS/power. AtomS3s likewise do
+not use temperature probes in this setup.
 
 **Where each probe is logged.** The CSV has three probe columns: cab, canopy
 and outside. By default, matching the kits above, the cab is the Dial's
@@ -492,7 +506,7 @@ home) it fetches the current weather for its GPS position from
 minutes, or sooner after moving 10 km. Offline, the weather columns stay
 empty; the probes keep working.
 
-The **WEATHER** page on the Cardputer and Core2 shows the three locations, the
+The **WEATHER** page on the Cardputer ADV and Core2 shows the three locations, the
 latest internet weather and the ID of every probe it can see.
 
 ## Controls
@@ -502,10 +516,13 @@ latest internet weather and the ID of every probe it can see.
 | `Tab`, `]` or Fn+right | Next large-text dashboard page |
 | `[` or Fn+left | Previous dashboard page |
 | `1`–`9` | Open dashboard pages 1–9 directly |
-| `0` | Open the KML export page (page 10) |
+| `0` | Open the KML export page |
 | `G` | Cycle GPS source (`AUTO`/`GROVE`/`CAP` on ADV) |
-| `R` | On GPS SOURCE: GPS from this unit or the AtomS3. On IMU SOURCE: IMU from this unit or the AtomS3 (GPS from the AtomS3 always brings its IMU). Elsewhere: cycle `LOCAL GPS`, `ATOM REMOTE` and `GPS+ATOM IMU` |
+| `R` | On GPS SOURCE: GPS from this unit or the AtomS3. On IMU SOURCE: select IMU source. On RANGER FAULTS: request another read. Elsewhere: cycle `LOCAL GPS`, `ATOM REMOTE` and `GPS+ATOM IMU` |
 | `W` | Open the Wi-Fi setup page and scan for nearby networks |
+| `O` | Open/cycle Ranger OBD pages: engine, temperatures, tyres, faults, connection (Wi-Fi ELM327 only) |
+| `C` / `N` on RANGER FAULTS | Switch stored/pending codes / show the next code |
+| `D` / `R` on RANGER TYRES | Cycle normal display and LF/RF/LR/RR request diagnostics / request a fresh TPMS read |
 | `K` | Open the KML page and rescan all finished days for missing exports |
 | `P` | Open the WAYPOINT page |
 | `A` on WAYPOINT | Save a waypoint immediately from the selected GPS source |
@@ -514,10 +531,125 @@ latest internet weather and the ID of every probe it can see.
 | `S` | Turn the display off without stopping GPS monitoring. It also turns off by itself after 15 minutes with no input; any key or the G0 button wakes it (that press does nothing else) |
 | `-` / `=` | Decrease/increase display brightness |
 
+The 15-minute screensaver blanks the display and backlight only; GPS, IMU,
+OBD polling and SD logging keep running. It also applies when Wi-Fi setup or a
+waypoint editor is left idle, preserving the unfinished entry. Any key or G0
+wakes the Cardputer; release it before entering the next command. Change
+`config::kScreenSaverMs` in `include/Config.h` to adjust the timeout.
+
+The Ranger OBD pages make a read-only TCP connection to a Wi-Fi ELM327 adapter
+using 11-bit, 500 kbit/s CAN (engine address `7E0`). Configure `obd_wifi_host` and
+`obd_wifi_port` in `/telemetry/logger.cfg`; common adapter defaults are
+`192.168.0.10:35000`, but use the address/port printed in that adapter's
+manual. The adapter and Cardputer must be on the same Wi-Fi network. The
+firmware does not yet support Bluetooth OBD adapters, including the vLinker
+FS. The OBD page distinguishes a TCP adapter connection from actual ECU data.
+With ignition off, an adapter may power up and accept TCP while the ECU remains
+asleep, so `ADAPTER ONLY` is expected; live vehicle PIDs need the ignition on
+and a responding ECU. Testing the network connection at home does not require
+the engine or ignition, if the adapter can be powered separately, but it cannot
+verify ECU/PID support unless connected to a vehicle with its ECU awake.
+
+For a parked Wi-Fi-adapter test, put the adapter in its documented Wi-Fi/AP
+mode, press `W`, and connect the Cardputer to the adapter's network (not your
+home router). Check the adapter's manual for its SSID, IP address and TCP port;
+save the IP/port as `obd_wifi_host`/`obd_wifi_port` in the SD config. Then press
+`O`. `ADAPTER ONLY` means the TCP link works but no OBD ECU response is arriving;
+`ECU DATA` means at least one standard PID was answered. A Bluetooth/Wi-Fi
+combo device still needs its Wi-Fi mode enabled for this firmware path.
+
+Wi-Fi is shared by OBD and internet features. An adapter's own Wi-Fi network
+often provides no internet: OBD can work while internet weather, NTP and
+timezone lookup cannot. GPS time and telemetry continue. Only one Wi-Fi
+network can be joined at a time. Wi-Fi setup lists 2.4 GHz access points, not
+Bluetooth devices. Saved-network reconnection is paused during setup so it
+cannot prevent a scan. Completion is checked against the Wi-Fi driver's status
+and access-point count, so an interrupted scan or missing result records is
+reported as an error. An empty active scan automatically retries with a passive
+all-channel scan before showing `No named networks` (2.4 GHz only). A scan
+error or 15-second timeout per pass is shown explicitly;
+`R` retries and `Q` exits. OBD TCP polling pauses while setup is open and
+resumes when it closes. Scanning other channels may briefly interrupt ESP-NOW.
+
+The Cardputer has five OBD pages (press `O` to cycle):
+
+| Page | Readings |
+|---|---|
+| RANGER ENGINE | Revs, ECU vehicle speed, calculated load, throttle and gauge boost (MAP minus measured barometric pressure) |
+| RANGER TEMPS | Coolant, engine oil, intake air, outside air and ECU supply voltage |
+| RANGER TYRES | LF/RF/LR/RR pressure in psi and sensor temperature in degrees C, when available; experimental Ford profile |
+| RANGER FAULTS | Check-engine lamp, stored and pending engine/emissions DTCs; `C` switches type, `N` pages, `R` requests a fresh read |
+| OBD CONNECTION | Wi-Fi SSID, local IP, configured adapter TCP address, fuel level, MAP and last communication error |
+
+Ranger OBD labels, fault text and connection details use double-size text.
+Faults show one code at a time so its description fits on two readable lines;
+press `N` for the next code. Long Wi-Fi names and adapter hostnames are
+shortened with an ellipsis to fit the display.
+
+Standard PID support is discovered before polling. Unsupported, incomplete or
+stale readings show `--`. Engine readings expire after 15 seconds; tyre data
+and fault-read results expire after 90 seconds. Faults are read about every
+30 seconds, with up to 16 codes displayed per type. `Not read / unavailable`
+never means there are no faults: a zero-code result requires a valid ECU
+reply. This reads the engine ECU only, not a full Ford BCM/ABS/airbag module
+fault scan. There is no fault-clear or vehicle-configuration command.
+
+The **2023 Next Gen Ranger Sport tyre profile is experimental and has not
+been verified on the vehicle**. `obd_ford_tpms=1` (default) queries BCM `726`
+with service `22`, using DIDs `2813/2814/2816/2815` for LF/RF/LR/RR pressures
+and the Ranger `raw / 20` psi conversion documented by
+[OBDb's Ranger profile](https://github.com/OBDb/Ford-Ranger/blob/main/signalsets/v3/default.json).
+It attempts to map sensor IDs (`280F/2810/2812/2811`) to the last-received
+sensor record (`280B`), following the published
+[openRS Ford TPMS decoder](https://github.com/klexical/openRS_/blob/main/android/docs/pid-reference.md).
+That positional temperature method was documented on a Focus, so its
+Next Gen Ranger applicability remains unconfirmed. Temperature is assigned
+to a wheel only after an ID match and a non-cached sensor-status response.
+Unmapped temperature records remain unassigned. No per-wheel temperature
+values are invented from ambient temperature or other sensors.
+
+Factory TPMS, the correct module mappings and adapter/gateway access are all
+required; some generic adapters cannot reach the BCM or handle its multi-frame
+replies. Compare tyre pressure and wheel positions with the Ranger's dashboard
+before relying on them. The BCM may itself return cached sensor measurements;
+successful polling is not proof of a newly transmitted wheel measurement.
+`obd_ford_tpms=0` disables the Ford-specific queries while retaining engine
+OBD and fault-code pages. The firmware changes no Ford configuration and does
+not enable TPMS or bypass a gateway. Transmission temperature, DPF metrics
+and a complete Ford module scan are not implemented.
+
+From v0.19, BCM requests explicitly select reply ID `72E` with `ATCRA72E`,
+then restore the engine header and reply filter (`7E0` / `7E8`) before engine
+polling resumes. A rejected BCM setup does not disable working engine reads.
+The four pressure requests run before optional sensor IDs/temperature. If an
+optional query times out, those optional queries are omitted on reconnection
+until a manual TPMS retry; normal engine and pressure polling can continue.
+
+On **RANGER TYRES**, `R` requests another read and `D` cycles through per-wheel
+diagnostics and back to the pressure display. Each diagnostic shows the DID,
+result and captured reply. `NO DATA` means no accepted response for that
+request; `REJECTED NRC xx` is an actual negative ECU reply, and `SETUP FAILED`
+means the adapter rejected the address/filter setup before a tyre read could
+run. These diagnostics survive ordinary engine replies instead of disappearing
+when RPM/speed polling succeeds. Matching raw replies are also printed to USB
+serial as `TPMS ...`. A response-pending reply (`7F 22 78`) waits for the final
+response within the bounded command timeout. None of this changes TPMS
+configuration or circumvents vehicle gateway restrictions.
+
+Host regression tests for OBD parsing and simulated ELM sessions can be run
+with `bash test/host/run.sh` (requires a C++17 compiler). They exercise
+malformed/multi-frame responses, DTC counts, supported-PID filtering,
+disconnect recovery, ECU-header rejection, overflow, freshness and wheel IDs;
+Wi-Fi setup tests also exercise populated scans, callback ordering, passive
+retry, interrupted scans, missing result records and cancellation. These tests
+do not establish real vehicle or adapter compatibility. CSV tests cover column
+alignment, wheel positions, freshness, zero versus missing values, DTC cells,
+buffer overflow and discovery of both legacy and OBD-schema daily filenames.
+
 The selected page is remembered across restarts. The Cardputer battery
 percentage appears at the top right of each titled page, and the Logger page
 also shows its voltage. M5Unified reads the battery through an ADC divider and
-cannot detect charging. The eleven pages are:
+cannot detect charging. The main dashboard pages include:
 
 1. Combined GPS/IMU summary
 2. Large current speed
@@ -574,7 +706,7 @@ Launcher accepts ordinary PlatformIO `firmware.bin` application images. See the
 Logs are written to:
 
 ```text
-/telemetry/telemetry_YYYY-MM-DD.csv
+/telemetry/telemetry_YYYY-MM-DD_obd1.csv
 ```
 
 `YYYY-MM-DD` is the **resolved local calendar date**, not UTC. A new file is
@@ -582,6 +714,11 @@ opened on the first record after local midnight. If the timezone changes while
 travelling, the next record is routed to the correct local-date file.
 `timestamp` remains UTC (`...Z`) for stable analysis, while `local_timestamp`
 includes the active local UTC offset.
+
+From v0.18, `_obd1` identifies the expanded CSV schema. Existing daily
+`telemetry_YYYY-MM-DD.csv` files are left intact; new rows use the new filename
+so OBD columns cannot be appended beneath an older header. Both formats remain
+available in the file portal and eligible for KML export.
 
 Time and timezone are resolved independently:
 
@@ -688,7 +825,7 @@ Dinosaurs left tracks for palaeontologists; this logger leaves them for Google
 Earth. Every finished local-calendar-day CSV is automatically converted to:
 
 ```text
-/telemetry/kml/telemetry_YYYY-MM-DD.kml
+/telemetry/kml/telemetry_YYYY-MM-DD_obd1.kml
 ```
 
 The current day's CSV is deliberately skipped because it is still being
@@ -696,6 +833,8 @@ written. At local midnight the logger closes the old file, queues it for
 conversion, and continues logging to the new date. On every boot it also scans
 for older CSV files that do not yet have a KML. Press `K` at any time to open
 page 10 and run that scan manually.
+
+Legacy daily CSVs retain their original unsuffixed KML filenames.
 
 Conversion runs only while the vehicle is confirmed stopped. It is streamed a
 few CSV rows at a time so a large file is never loaded into RAM, and it pauses
@@ -756,6 +895,7 @@ All user-tunable constants are in `include/Config.h`. The main ones are:
 
 | Constant | Default | Meaning |
 |---|---:|---|
+| `kScreenSaverMs` | 15 min | Display-off timeout after the last local input |
 | `kGroveGpsBaudCandidates` | 9600, 115200, 38400, 4800, 19200, 57600 | Grove NMEA auto-detection order |
 | `kCapGpsBaud` | 115200 | Cap LoRa-1262 ATGM336H baud |
 | `kGpsBaudScanIntervalMs` | 2.5 s | Time spent testing each Grove baud |
@@ -788,7 +928,7 @@ valid 19-field data rows spanning `2026-09-26T06:01:36.500Z` through
 `2026-09-26T21:27:26.000Z`, but also contains a repeated header, 871 duplicate
 timestamp rows, and a trailing NUL-filled record. This logger preserves the
 original first 19 columns in the same order while avoiding those structural
-errors. Seven diagnostic columns are appended.
+errors. Diagnostic, trip and OBD columns are appended.
 
 | Column | Meaning |
 |---|---|
@@ -832,6 +972,43 @@ errors. Seven diagnostic columns are appended.
 | `wx_code`, `wx_age_min` | WMO weather code and the age of the reading in minutes; all `wx_` columns are empty until the first fetch |
 | `road_type` | Road type set on the M5Dial's ROAD page: `PAVED`, `GRAVEL`, `DIRT` or `TRAIL` |
 | `road_surface` | Surface condition from the same page: `DRY`, `DAMP`, `WET` or `VERY WET` |
+
+### OBD columns (v0.18 / `obd1`)
+
+The following 45 columns follow `road_surface` in every new telemetry row:
+
+| Columns | Meaning |
+|---|---|
+| `obd_connected`, `obd_ecu_responding` | TCP adapter connection and recent engine ECU response, as `0`/`1` |
+| `obd_age_ms` | Age of the latest valid engine reply; blank without a recent reply |
+| `obd_rpm`, `obd_speed_kmh` | Engine revs and ECU speed; existing `speed_kmh` remains GPS speed |
+| `obd_load_pct`, `obd_throttle_pct`, `obd_fuel_pct` | Engine load, throttle and fuel level, percent |
+| `obd_boost_kpa`, `obd_map_kpa`, `obd_baro_kpa` | Gauge boost (MAP minus measured barometer), manifold absolute pressure and barometric pressure |
+| `obd_coolant_c`, `obd_oil_c`, `obd_intake_c`, `obd_ambient_c` | ECU-reported temperatures in degrees C |
+| `obd_voltage_v` | ECU supply voltage |
+| `obd_mil_on`, `obd_ecu_dtc_count` | Check-engine lamp (`0`/`1`) and the ECU's reported stored-code count; blank if unread |
+| `obd_stored_dtc_count`, `obd_pending_dtc_count` | Counts from valid stored/pending fault reads; blank means unknown, `0` means a valid zero-code reply |
+| `obd_stored_dtcs`, `obd_pending_dtcs` | Up to 16 codes per type, separated by semicolons within one CSV cell, e.g. `P0299;P2463` |
+| `obd_stored_dtc_age_ms`, `obd_pending_dtc_age_ms` | Age of each valid fault read |
+| `obd_stored_dtcs_truncated`, `obd_pending_dtcs_truncated` | `1` when the ECU reported more codes than fit in the corresponding list, otherwise `0`; blank if unread |
+| `obd_tyre_lf_psi`, `obd_tyre_rf_psi`, `obd_tyre_lr_psi`, `obd_tyre_rr_psi` | Available tyre pressures in psi: left front, right front, left rear, right rear |
+| `obd_tyre_lf_c`, `obd_tyre_rf_c`, `obd_tyre_lr_c`, `obd_tyre_rr_c` | Available, ID-matched tyre sensor temperatures in degrees C |
+| `obd_tyre_{lf,rf,lr,rr}_pressure_age_ms` | Age of the BCM pressure response for each wheel |
+| `obd_tyre_{lf,rf,lr,rr}_temp_age_ms` | Age of the accepted, mapped temperature record for each wheel |
+| `obd_tpms_last_sensor_id_hex`, `obd_tpms_last_sensor_c`, `obd_tpms_last_sensor_age_ms` | Most recently accepted TPMS sensor record: hexadecimal sensor ID, temperature and record age; retained even if its wheel position is not yet mapped |
+
+Rows contain the latest polled OBD snapshot at the existing logger cadence,
+not one row per OBD reply. OBD logging runs regardless of the selected screen,
+including while the display is off. Unavailable, unsupported or stale values
+are empty cells; real zero readings are retained. Engine fields expire after
+15 seconds; tyre values and fault results expire after 90 seconds. Reading
+ages describe successful diagnostic replies, not necessarily a new wheel
+sensor transmission: the Ford BCM can return cached measurements.
+
+Tyre pressure/temperature availability and the experimental Ford mappings still
+require verification on the vehicle. Logging adds no new Ford commands or bus
+access. The original Cardputer's external-probe columns remain empty; these
+new `obd_tyre_*` columns are vehicle data, separate from external probes.
 
 On the original Cardputer in `LOCAL_GPS`, IMU numeric columns remain empty. In
 `ATOMS3_REMOTE`, both original Cardputer revisions receive the AtomS3 IMU data.

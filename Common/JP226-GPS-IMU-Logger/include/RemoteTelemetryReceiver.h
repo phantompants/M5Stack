@@ -8,7 +8,7 @@
 
 class RemoteTelemetryReceiver {
  public:
-  bool begin(const uint8_t allowedMac[6]);
+  bool begin(const uint8_t allowedMac[6], bool allowBlackBoxAndProbes = true);
   void update(uint32_t nowMs);
   NormalizedTelemetry snapshot(uint32_t nowMs) const;
   bool popRawImuBatch(telemetry::RawImuBatchPacket& packet);
@@ -85,6 +85,7 @@ class RemoteTelemetryReceiver {
   size_t ackSlot_ = 0;
   size_t nextCommandSlot_ = 0;
   bool ready_ = false;
+  bool allowBlackBoxAndProbes_ = true;
   uint32_t lastPacketMs_ = 0;
   uint32_t lastDiscoveryMs_ = 0;
   uint32_t lastDialStatusMs_ = 0;

@@ -4,6 +4,7 @@
 #include <cstdlib>
 
 #include "Config.h"
+#include "ObdCsv.h"
 
 namespace {
 
@@ -176,8 +177,7 @@ void KmlExporter::scanOne(const String& activeCsvPath,
   const String name = baseName(entryName);
   const String suffix = ".csv";
   if (!name.startsWith(filePrefix_) || !name.endsWith(suffix)) return;
-  const size_t expectedLength = filePrefix_.length() + 10 + suffix.length();
-  if (name.length() != expectedLength) return;
+  if (!obd::csv::isDailyFileName(name.c_str(), filePrefix_.c_str())) return;
   const String fileDate = name.substring(filePrefix_.length(),
                                          filePrefix_.length() + 10);
   if (!validDateText(fileDate) || !validDateText(localDate) ||

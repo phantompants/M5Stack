@@ -23,6 +23,8 @@
 #include "Version.h"
 #include "KmlExporter.h"
 #include "LocationTime.h"
+#include "ObdReader.h"
+#include "ObdCsv.h"
 #include "LogSchedule.h"
 #include "PlaceResolver.h"
 #include "TempProbe.h"
@@ -84,10 +86,21 @@ enum class DashboardPage : uint8_t {
   Waypoint,
   Version,
   About,
+#if !JP226_CORE2
+  Obd,
+  ObdTemps,
+  ObdTyres,
+  ObdFaults,
+  ObdLink,
+#endif
   Count,
 };
 
 enum class WaypointEditor : uint8_t { Closed, Name, Note, Photo };
+
+bool isCardputerV1() {
+  return M5.getBoard() == m5::board_t::board_M5Cardputer;
+}
 
 class ImuSampler {
  public:
@@ -225,16 +238,19 @@ class CsvLineBuilder {
 
   void append(const char* format, ...) {
     if (length_ >= sizeof(data_) - 1) {
+      complete_ = false;
       return;
     }
     va_list args;
     va_start(args, format);
     const int count = vsnprintf(data_ + length_, sizeof(data_) - length_, format, args);
     va_end(args);
-    if (count <= 0) {
+    if (count < 0) {
+      complete_ = false;
       return;
     }
     const size_t written = static_cast<size_t>(count);
+    if (written >= sizeof(data_) - length_) complete_ = false;
     length_ += written < sizeof(data_) - length_ ? written : sizeof(data_) - length_ - 1;
   }
 
@@ -248,10 +264,12 @@ class CsvLineBuilder {
 
   const char* c_str() const { return data_; }
   size_t length() const { return length_; }
+  bool complete() const { return complete_; }
 
  private:
-  char data_[768]{};
+  char data_[2048]{};
   size_t length_ = 0;
+  bool complete_ = true;
 };
 
 class GpsReceiver {
@@ -340,6 +358,7 @@ WaypointStore waypointStore;
 PlaceResolver placeResolver;
 VehicleContext vehicleContext;
 LocationTime locationTime;
+ObdReader obdReader;
 KmlExporter kmlExporter;
 WebPortal webPortal;
 #if JP226_CORE2
@@ -373,7 +392,6 @@ bool placeResolverStarted = false;
 bool screenOn = true;
 // Screen saver: the display turns off after this long with no key, button or
 // touch input. Logging carries on; the next press only wakes the screen.
-constexpr uint32_t kScreenSaverMs = 15UL * 60UL * 1000UL;
 uint32_t lastInputMs = 0;
 bool immediateLogRequested = false;
 bool stopCandidateActive = false;
@@ -391,8 +409,8 @@ uint32_t lastRtcWriteMs = 0;
 uint64_t rowsWritten = 0;
 uint32_t tripStartedMs = 0;
 
-// DS18B20 probes on this logger's own Grove port (Core2 Port A, or a
-// Cardputer's Grove port when a probe is found there at start-up, in which
+// DS18B20 probes on this logger's own Grove port (Core2 Port A, or an
+// ADV's Grove port when a probe is found there at start-up, in which
 // case the Grove GPS is left off for that session).
 TempProbes localProbes;
 bool groveProbe = false;
@@ -415,6 +433,9 @@ LogMode mode = LogMode::WaitingForFix;
 GpsPreference gpsPreference = GpsPreference::Auto;
 DashboardPage dashboardPage = DashboardPage::Combined;
 TelemetrySource telemetrySource = TelemetrySource::LocalGps;
+bool obdPendingCodes = false;
+int8_t obdTyreDetail = -1;
+uint8_t obdFaultOffset = 0;
 NormalizedTelemetry activeTelemetry;
 bool dashboardCanvasReady = false;
 bool haveDashboardFrameHash = false;
@@ -803,9 +824,9 @@ String pathForLocalDay(time_t nowUtc) {
   struct tm local {};
   localtime_r(&nowUtc, &local);
   char path[64]{};
-  snprintf(path, sizeof(path), "%s/%s%04d-%02d-%02d.csv", config::kLogDirectory,
+  snprintf(path, sizeof(path), "%s/%s%04d-%02d-%02d%s", config::kLogDirectory,
            config::kFilePrefix, local.tm_year + 1900, local.tm_mon + 1,
-           local.tm_mday);
+           local.tm_mday, obd::csv::kFileSuffix);
   return String(path);
 }
 
@@ -956,7 +977,8 @@ bool openDailyFile(time_t nowUtc, uint32_t nowMs) {
     return false;
   }
   if (logFile.size() == 0) {
-    if (logFile.println(kCsvHeader) == 0) {
+    const String header = String(kCsvHeader) + "," + obd::csv::kColumns;
+    if (logFile.println(header) != header.length() + 2) {
       markSdFailed(nowMs);
       return false;
     }
@@ -966,6 +988,7 @@ bool openDailyFile(time_t nowUtc, uint32_t nowMs) {
 }
 
 void loadProbeLocations() {
+  if (isCardputerV1()) return;
   File file = SD.open(config::kLoggerConfigPath, FILE_READ);
   if (!file) return;
   constexpr const char* kKeys[3] = {"probe_cab", "probe_canopy",
@@ -1009,6 +1032,7 @@ const char* probeSourceName(telemetry::ProbeSource source) {
 // Every probe heard in the last minute: this logger's own, then each
 // accessory's. Returns how many were written to `entries`.
 int collectProbes(ProbeEntry* entries, int capacity, uint32_t nowMs) {
+  if (isCardputerV1()) return 0;
   int count = 0;
   for (int i = 0; i < localProbes.count() && count < capacity; ++i) {
     entries[count++] = {telemetry::ProbeSource::Logger,
@@ -1035,6 +1059,7 @@ int collectProbes(ProbeEntry* entries, int capacity, uint32_t nowMs) {
 // by default the Dial's for the cab, the Echo's (else the logger's own) for
 // the canopy and the black box's for outside. NaN when there is none.
 float locationCelsius(ProbeLocation location, uint32_t nowMs) {
+  if (isCardputerV1()) return NAN;
   ProbeEntry entries[16];
   const int count = collectProbes(entries, 16, nowMs);
   auto first = [&](telemetry::ProbeSource source) {
@@ -1163,7 +1188,7 @@ bool writeCsvRow(const NormalizedTelemetry& telemetryData, uint32_t nowMs,
   optional(locationCelsius(ProbeCanopy, nowMs), "%.1f");
   optional(locationCelsius(ProbeOutside, nowMs), "%.1f");
   WeatherReading wx;
-  if (weather.latest(wx)) {
+  if (!isCardputerV1() && weather.latest(wx)) {
     optional(wx.temperatureC, "%.1f");
     optional(wx.humidityPct, "%.0f");
     optional(wx.pressureHpa, "%.1f");
@@ -1177,6 +1202,19 @@ bool writeCsvRow(const NormalizedTelemetry& telemetryData, uint32_t nowMs,
   }
   line.append(",%s,%s", WaypointStore::csvField(vehicleContext.roadType).c_str(),
               WaypointStore::csvField(vehicleContext.roadSurface).c_str());
+
+  // Record the same polled OBD snapshot used by the UI at the normal logging
+  // cadence. Tyre values are included only when the Ford reader has them.
+  static char obdFields[obd::csv::kBufferSize];
+  if (!obd::csv::writeFields(obdReader.snapshot(), nowMs, obdFields, sizeof(obdFields))) {
+    Serial.println("OBD CSV row exceeded its buffer; row skipped");
+    return false;
+  }
+  line.append(",%s", obdFields);
+  if (!line.complete()) {
+    Serial.println("Telemetry CSV row exceeded its buffer; row skipped");
+    return false;
+  }
 
   const size_t written = logFile.println(line.c_str());
   logFile.flush();
@@ -1509,6 +1547,7 @@ void handleDialCommand(const telemetry::DialCommandPacket& command) {
 // What this logger is recording, for an Atom Lite black box to keep a backup
 // copy. Sent once a second to every paired controller.
 void sendPositionReport(uint32_t nowMs) {
+  if (isCardputerV1()) return;  // No black-box backup for the original Cardputer.
   if (!remoteReceiver.dialConnected(nowMs)) return;
   static uint32_t sequence = 0;
   const GpsSnapshot& gps = activeTelemetry.gps;
@@ -1745,7 +1784,14 @@ void handleWaypointEditor() {
   lastDisplayMs = 0;
 }
 
+bool dashboardPageAvailable(DashboardPage page) {
+  if (page >= DashboardPage::Count) return false;
+  return !isCardputerV1() ||
+         (page != DashboardPage::BlackBox && page != DashboardPage::Weather);
+}
+
 void selectDashboardPage(DashboardPage page) {
+  if (!dashboardPageAvailable(page)) page = DashboardPage::Combined;
   dashboardPage = page;
   preferences.putUChar("page", static_cast<uint8_t>(page));
   haveDashboardFrameHash = false;
@@ -1754,9 +1800,11 @@ void selectDashboardPage(DashboardPage page) {
 
 void moveDashboardPage(int direction) {
   const int count = static_cast<int>(DashboardPage::Count);
-  const int current = static_cast<int>(dashboardPage);
-  selectDashboardPage(
-      static_cast<DashboardPage>((current + direction + count) % count));
+  int next = static_cast<int>(dashboardPage);
+  do {
+    next = (next + direction + count) % count;
+  } while (!dashboardPageAvailable(static_cast<DashboardPage>(next)));
+  selectDashboardPage(static_cast<DashboardPage>(next));
 }
 
 void setScreen(bool on) {
@@ -1764,6 +1812,7 @@ void setScreen(bool on) {
   if (on) {
     M5Cardputer.Display.wakeup();
     M5Cardputer.Display.setBrightness(displayBrightness);
+    wifiSetup.requestRedraw();
     haveDashboardFrameHash = false;
     lastDisplayMs = 0;
   } else {
@@ -1775,14 +1824,26 @@ void handleControls() {
   // Count held keys here rather than calling Keyboard.isChange(), which
   // clears the change flag and would hide the key from the handlers below.
   static size_t heldKeyCount = 0;
+  static bool swallowWakeInput = false;
   const size_t keyCount = M5Cardputer.Keyboard.keyList().size();
   const bool keyDown = keyCount > heldKeyCount;
   heldKeyCount = keyCount;
   const bool inputDown = keyDown || M5Cardputer.BtnA.wasPressed();
-  if (inputDown) lastInputMs = millis();
+  if (keyCount > 0 || M5Cardputer.BtnA.isPressed()) lastInputMs = millis();
   if (!screenOn) {
     // The press that wakes the screen must not also act.
-    if (inputDown) setScreen(true);
+    if (inputDown) {
+      setScreen(true);
+      swallowWakeInput = true;
+      M5Cardputer.Keyboard.isChange();
+    }
+    return;
+  }
+  if (swallowWakeInput) {
+    // isChange() remembers the key count. Consume the wake gesture through
+    // release so it cannot become a shortcut or a character on the next pass.
+    M5Cardputer.Keyboard.isChange();
+    if (keyCount == 0 && !M5Cardputer.BtnA.isPressed()) swallowWakeInput = false;
     return;
   }
   if (wifiSetup.active()) {
@@ -1816,7 +1877,11 @@ void handleControls() {
   } else if (M5Cardputer.Keyboard.isKeyPressed('g')) {
     cycleGpsPreference();
   } else if (M5Cardputer.Keyboard.isKeyPressed('r')) {
-    if (dashboardPage == DashboardPage::GpsSource) {
+    if (dashboardPage == DashboardPage::ObdTyres) {
+      obdReader.requestTpmsScan();
+    } else if (dashboardPage == DashboardPage::ObdFaults) {
+      obdReader.requestFaultScan();
+    } else if (dashboardPage == DashboardPage::GpsSource) {
       toggleGpsSource();
     } else if (dashboardPage == DashboardPage::ImuSource) {
       toggleImuSource();  // The page explains when GPS pins it to the AtomS3.
@@ -1825,6 +1890,24 @@ void handleControls() {
     }
   } else if (M5Cardputer.Keyboard.isKeyPressed('p')) {
     selectDashboardPage(DashboardPage::Waypoint);
+  } else if (M5Cardputer.Keyboard.isKeyPressed('o')) {
+    const bool inObd = dashboardPage >= DashboardPage::Obd &&
+                       dashboardPage <= DashboardPage::ObdLink;
+    selectDashboardPage(inObd && dashboardPage != DashboardPage::ObdLink
+        ? static_cast<DashboardPage>(static_cast<uint8_t>(dashboardPage) + 1)
+        : DashboardPage::Obd);
+  } else if (dashboardPage == DashboardPage::ObdTyres &&
+             M5Cardputer.Keyboard.isKeyPressed('d')) {
+    obdTyreDetail = static_cast<int8_t>((obdTyreDetail + 2) % 5 - 1);
+  } else if (dashboardPage == DashboardPage::ObdFaults &&
+             M5Cardputer.Keyboard.isKeyPressed('c')) {
+    obdPendingCodes = !obdPendingCodes;
+    obdFaultOffset = 0;
+  } else if (dashboardPage == DashboardPage::ObdFaults &&
+             M5Cardputer.Keyboard.isKeyPressed('n')) {
+    const auto snapshot = obdReader.snapshot();
+    const auto& faults = obdPendingCodes ? snapshot.pending : snapshot.stored;
+    obdFaultOffset = obdFaultOffset + 1 < faults.count ? obdFaultOffset + 1 : 0;
   } else if (dashboardPage == DashboardPage::Waypoint &&
              M5Cardputer.Keyboard.isKeyPressed('a')) {
     WaypointRecord created;
@@ -1902,9 +1985,15 @@ void drawPageFooter(const char* hint = "[ ]/Tab: pages") {
   display.setTextSize(1);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   char footer[48]{};
+  unsigned pageNumber = 0;
+  unsigned pageCount = 0;
+  for (unsigned index = 0; index < static_cast<unsigned>(DashboardPage::Count); ++index) {
+    if (!dashboardPageAvailable(static_cast<DashboardPage>(index))) continue;
+    ++pageCount;
+    if (index == static_cast<unsigned>(dashboardPage)) pageNumber = pageCount;
+  }
   snprintf(footer, sizeof(footer), "%s  %u/%u", hint,
-           static_cast<unsigned>(dashboardPage) + 1,
-           static_cast<unsigned>(DashboardPage::Count));
+           pageNumber, pageCount);
   display.drawString(footer, 2, display.height() - 1);
   display.setTextDatum(top_left);
 }
@@ -2265,6 +2354,171 @@ void drawBlackBoxPage(uint32_t nowMs) {
   drawPageFooter();
 }
 
+void beginObdPage(const char* title, const ObdReader::Snapshot& obd) {
+  drawPageTitle(title);
+  auto& display = dashboardCanvas;
+  display.setTextSize(1);
+  display.setTextColor(obd.ecuResponding ? TFT_GREEN :
+                       obd.connected ? TFT_ORANGE : TFT_RED, TFT_BLACK);
+  display.drawString(obdReader.statusText(), 3, 25);
+}
+
+void drawObdValue(const char* label, float value, const char* unit, int y,
+                  int decimals = 0) {
+  auto& display = dashboardCanvas;
+  display.setTextSize(2);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.drawString(label, 3, y);
+  display.setTextColor(std::isfinite(value) ? TFT_CYAN : TFT_DARKGREY, TFT_BLACK);
+  const String text = std::isfinite(value) ? String(value, decimals) : "--";
+  display.drawString(text + unit, 110, y);
+}
+
+void drawObdPage() {
+  const auto obd = obdReader.snapshot();
+  beginObdPage("RANGER ENGINE", obd);
+  drawObdValue("Revs", obd.engine[obd::Rpm], " rpm", 39);
+  drawObdValue("Speed", obd.engine[obd::Speed], " km/h", 55);
+  drawObdValue("Load", obd.engine[obd::Load], "%", 71);
+  float boost = NAN;
+  if (std::isfinite(obd.engine[obd::Map]) && std::isfinite(obd.engine[obd::Barometer]))
+    boost = obd.engine[obd::Map] - obd.engine[obd::Barometer];
+  drawObdValue("Boost", boost, " kPa", 87);
+  drawObdValue("Throttle", obd.engine[obd::Throttle], "%", 103);
+  drawPageFooter("O: next OBD W: Wi-Fi");
+}
+
+void drawObdTempsPage() {
+  const auto obd = obdReader.snapshot();
+  beginObdPage("RANGER TEMPS", obd);
+  drawObdValue("Coolant", obd.engine[obd::Coolant], " C", 39);
+  drawObdValue("Oil", obd.engine[obd::Oil], " C", 55);
+  drawObdValue("Intake", obd.engine[obd::Intake], " C", 71);
+  drawObdValue("Outside", obd.engine[obd::Ambient], " C", 87);
+  drawObdValue("Voltage", obd.engine[obd::Voltage], " V", 103, 1);
+  drawPageFooter("O: next OBD W: Wi-Fi");
+}
+
+void drawObdTyresPage() {
+  const auto obd = obdReader.snapshot();
+  drawPageTitle("RANGER TYRES");
+  auto& display = dashboardCanvas;
+  bool havePressure = false;
+  for (float value : obd.tyrePsi) havePressure |= std::isfinite(value);
+  display.setTextSize(1);
+  display.setTextColor(havePressure ? TFT_GREEN : TFT_ORANGE, TFT_BLACK);
+  display.drawString(obdReader.tpmsStatusText(), 3, 25);
+  constexpr const char* wheels[] = {"LF", "RF", "LR", "RR"};
+  if (obdTyreDetail >= 0) {
+    const auto& diagnostic = obdReader.tpmsDiagnostic(obdTyreDetail);
+    display.setTextSize(2);
+    display.setTextColor(TFT_WHITE, TFT_BLACK);
+    display.setCursor(3, 39);
+    display.printf("%s DID %04X", wheels[obdTyreDetail], obd::kFordDids[obdTyreDetail + 4]);
+    display.drawString("TX726 RX72E", 3, 57);
+    display.setTextColor(diagnostic.result == ObdReader::TpmsResult::Ok ? TFT_GREEN : TFT_ORANGE, TFT_BLACK);
+    if (diagnostic.negativeResponse && diagnostic.negativeResponse != 0x78) {
+      display.setCursor(3, 75);
+      display.printf("REJECTED NRC %02X", diagnostic.negativeResponse);
+    } else {
+      display.drawString(ObdReader::tpmsResultText(diagnostic.result), 3, 75);
+    }
+    display.setTextColor(TFT_WHITE, TFT_BLACK);
+    const String reply = diagnostic.reply[0] ? diagnostic.reply : "No reply captured";
+    display.drawString(reply.substring(0, 19), 3, 93);
+    if (reply.length() > 19) display.drawString(displayClip(reply.substring(19), 19), 3, 110);
+    drawPageFooter("D: next R: retry O: page");
+    return;
+  }
+  display.setTextColor(TFT_ORANGE, TFT_BLACK);
+  display.drawString(obdReader.fordTpmsEnabled()
+      ? "EXPERIMENTAL Ford BCM / psi / C" : "Ford TPMS disabled in logger.cfg", 3, 38);
+  for (int wheel = 0; wheel < 4; ++wheel) {
+    const int y = 51 + wheel * 17;
+    display.setTextSize(2);
+    display.setTextColor(TFT_WHITE, TFT_BLACK);
+    display.drawString(wheels[wheel], 3, y);
+    display.setTextColor(std::isfinite(obd.tyrePsi[wheel]) ? TFT_CYAN : TFT_DARKGREY, TFT_BLACK);
+    display.drawString(std::isfinite(obd.tyrePsi[wheel]) ? String(obd.tyrePsi[wheel], 1) : "--", 48, y);
+    display.setTextColor(std::isfinite(obd.tyreC[wheel]) ? TFT_CYAN : TFT_DARKGREY, TFT_BLACK);
+    display.drawString(std::isfinite(obd.tyreC[wheel]) ? String(obd.tyreC[wheel], 0) : "--", 151, y);
+  }
+  drawPageFooter("D: details R: retry O: next");
+}
+
+void drawObdFaultsPage(uint32_t nowMs) {
+  const auto obd = obdReader.snapshot();
+  beginObdPage("RANGER FAULTS", obd);
+  auto& display = dashboardCanvas;
+  display.setTextSize(2);
+  display.setTextColor(obd.milKnown && obd.milOn ? TFT_ORANGE : TFT_WHITE, TFT_BLACK);
+  display.drawString(obd.milKnown ? (obd.milOn ? "Check engine: ON" : "Check engine: OFF")
+                                   : "Check engine: ?", 3, 38);
+  const auto& faults = obdPendingCodes ? obd.pending : obd.stored;
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setCursor(3, 56);
+  display.printf("%s: ", obdPendingCodes ? "Pending" : "Stored");
+  if (!faults.valid) {
+    display.print("unread");
+    display.drawString("Ignition ON", 3, 80);
+    display.drawString("R: read faults", 3, 101);
+  } else if (faults.reportedCount == 0) {
+    display.print("0");
+    display.drawString("Engine ECU only", 3, 80);
+    display.drawString("Other ECUs unread", 3, 101);
+  } else {
+    display.printf("%u codes", faults.reportedCount);
+    if (obdFaultOffset >= faults.count) obdFaultOffset = 0;
+    char code[6];
+    const auto raw = faults.codes[obdFaultOffset];
+    obd::formatDtc(raw, code);
+    display.setTextColor(TFT_ORANGE, TFT_BLACK);
+    display.drawString(code, 3, 76);
+    char position[12];
+    snprintf(position, sizeof(position), "%u/%u", obdFaultOffset + 1, faults.count);
+    display.setTextColor(TFT_WHITE, TFT_BLACK);
+    display.drawString(position, 160, 76);
+    // One code per screen leaves two full-size lines for its description.
+    const String description = obd::dtcDescription(raw);
+    if (description.length() <= 19) {
+      display.drawString(description, 3, 94);
+    } else {
+      int split = description.lastIndexOf(' ', 19);
+      if (split <= 0) split = 19;
+      display.drawString(description.substring(0, split), 3, 94);
+      String remaining = description.substring(split);
+      remaining.trim();
+      display.drawString(displayClip(remaining, 19), 3, 110);
+    }
+  }
+  (void)nowMs;
+  drawPageFooter("C: type N: next R: read O: next");
+}
+
+void drawObdLinkPage() {
+  const auto obd = obdReader.snapshot();
+  drawPageTitle("OBD CONNECTION");
+  auto& display = dashboardCanvas;
+  display.setTextSize(2);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.drawString("Wi-Fi " + displayClip(WiFi.SSID(), 13), 3, 25);
+  display.drawString("IP " + WiFi.localIP().toString(), 3, 41);
+  display.drawString("OBD " + displayClip(obdReader.host(), 15), 3, 57);
+  display.setCursor(3, 73);
+  display.printf("TCP port: %u", obdReader.port());
+  display.setCursor(3, 89);
+  display.printf("Fuel%s%% MAP%skPa",
+      std::isfinite(obd.engine[obd::Fuel]) ? String(obd.engine[obd::Fuel], 0).c_str() : "--",
+      std::isfinite(obd.engine[obd::Map]) ? String(obd.engine[obd::Map], 0).c_str() : "--");
+  display.setTextSize(1);
+  const bool haveError = obdReader.lastError()[0] != '\0';
+  display.setTextColor(haveError ? TFT_ORANGE :
+                       obd.ecuResponding ? TFT_GREEN : TFT_RED, TFT_BLACK);
+  display.drawString(displayClip(haveError ? obdReader.lastError()
+                                          : obdReader.statusText(), 38), 3, 111);
+  drawPageFooter("W: scan/connect O: engine");
+}
+
 // Probe temperatures by location, the internet weather and every probe's ID
 // (for probe_cab= / probe_canopy= / probe_outside= in logger.cfg).
 void drawWeatherPage(uint32_t nowMs) {
@@ -2609,6 +2863,23 @@ void drawStatus(const GpsSnapshot& sample, uint32_t nowMs, time_t nowUtc) {
     case DashboardPage::About:
       drawAboutPage(nowMs);
       break;
+#if !JP226_CORE2
+    case DashboardPage::Obd:
+      drawObdPage();
+      break;
+    case DashboardPage::ObdTemps:
+      drawObdTempsPage();
+      break;
+    case DashboardPage::ObdTyres:
+      drawObdTyresPage();
+      break;
+    case DashboardPage::ObdFaults:
+      drawObdFaultsPage(nowMs);
+      break;
+    case DashboardPage::ObdLink:
+      drawObdLinkPage();
+      break;
+#endif
     default:
       break;
   }
@@ -2628,14 +2899,7 @@ void drawStatus(const GpsSnapshot& sample, uint32_t nowMs, time_t nowUtc) {
 #endif  // JP226_CORE2
 
 void updateScreenSaver(uint32_t nowMs) {
-  // Don't blank the screen while someone is typing a WiFi password or note.
-#if !JP226_CORE2
-  if (wifiSetup.active() || waypointEditor != WaypointEditor::Closed) {
-    lastInputMs = nowMs;
-    return;
-  }
-#endif
-  if (screenOn && nowMs - lastInputMs >= kScreenSaverMs) setScreen(false);
+  if (screenOn && nowMs - lastInputMs >= config::kScreenSaverMs) setScreen(false);
 }
 
 // Board, IMU, internal I2C devices and radio links, printed every 10 s from
@@ -2709,7 +2973,9 @@ void loadPersistentState() {
   restoreCore2Page(savedPage);
 #else
   if (savedPage < static_cast<uint8_t>(DashboardPage::Count)) {
-    dashboardPage = static_cast<DashboardPage>(savedPage);
+    const auto page = static_cast<DashboardPage>(savedPage);
+    if (dashboardPageAvailable(page)) dashboardPage = page;
+    else preferences.putUChar("page", static_cast<uint8_t>(DashboardPage::Combined));
   }
 #endif
   const uint8_t savedGpsPreference = preferences.getUChar("gps_src", 0);
@@ -2793,7 +3059,7 @@ void setup() {
   imu.begin();
   loadPersistentState();
   waypointStore.begin(SD, preferences, config::kLogDirectory);
-  remoteReceiver.begin(config::kAtomEspNowMac);
+  remoteReceiver.begin(config::kAtomEspNowMac, !isCardputerV1());
   kmlExporter.begin(SD, config::kLogDirectory, config::kFilePrefix,
                     config::kKmlDirectory);
   webPortal.begin(SD, config::kLogDirectory, config::kKmlDirectory,
@@ -2806,8 +3072,10 @@ void setup() {
   // A probe on the Grove port at start-up takes it over from the Grove GPS
   // (a Cardputer ADV getting its GPS from the Cap). Searched once only, so
   // a Grove GPS keeps the pins otherwise.
-  localProbes.begin({config::kGroveGpsRxPin, config::kGroveGpsTxPin}, false);
-  groveProbe = localProbes.count() > 0;
+  if (!isCardputerV1()) {
+    localProbes.begin({config::kGroveGpsRxPin, config::kGroveGpsTxPin}, false);
+    groveProbe = localProbes.count() > 0;
+  }
 #endif
   groveBaudIndex = 0;
   if (!groveProbe) {
@@ -2825,10 +3093,12 @@ void setup() {
   if (mountSd(millis(), true)) {
     locationTime.begin(SD, preferences);
     locationTimeStarted = true;
+    obdReader.begin(SD);
     placeResolver.begin(SD, config::kLoggerConfigPath);
     placeResolverStarted = true;
     loadProbeLocations();
   }
+  lastInputMs = millis();
 }
 
 void loop() {
@@ -2844,12 +3114,20 @@ void loop() {
 
   const uint32_t nowMs = millis();
   updateScreenSaver(nowMs);
+#if !JP226_CORE2 && defined(JP226_WIFI_SCAN_SELF_TEST)
+  // Diagnostic builds exercise the same path as W without needing a keypress.
+  static bool scanSelfTestStarted = false;
+  if (!scanSelfTestStarted && nowMs >= 8000) {
+    scanSelfTestStarted = true;
+    wifiSetup.open();
+  }
+#endif
   updateGpsReceivers(nowMs);
   markLoopStep(StepGps);
   imu.update(nowMs);
   markLoopStep(StepImu);
   remoteReceiver.update(nowMs);
-  localProbes.update(nowMs);
+  if (!isCardputerV1()) localProbes.update(nowMs);
 
   activeTelemetry = takeActiveTelemetry(nowMs);
   telemetry::DialCommandPacket dialCommand{};
@@ -2864,11 +3142,15 @@ void loop() {
     locationTime.update(gpsSample.latitude, gpsSample.longitude,
                         gpsSample.positionFresh, gpsSample.speedKmh, nowMs);
   }
+  obdReader.setPaused(wifiSetup.active());
+  obdReader.update(nowMs);
   wifiSetup.update(nowMs);
   placeResolver.update(gpsSample.latitude, gpsSample.longitude,
                        gpsSample.positionFresh, nowMs);
-  weather.update(gpsSample.latitude, gpsSample.longitude,
-                 gpsSample.positionFresh, nowMs);
+  if (!isCardputerV1()) {
+    weather.update(gpsSample.latitude, gpsSample.longitude,
+                   gpsSample.positionFresh, nowMs);
+  }
   String resolvedPlace;
   if (placeResolver.takeChange(resolvedPlace)) {
     if (clockIsReady() && sdMounted) {
@@ -2912,6 +3194,7 @@ void loop() {
   if (sdMounted && !locationTimeStarted) {
     locationTime.begin(SD, preferences);
     locationTimeStarted = true;
+    obdReader.begin(SD);
   }
   if (sdMounted && !placeResolverStarted) {
     placeResolver.begin(SD, config::kLoggerConfigPath);
@@ -2949,7 +3232,7 @@ void loop() {
   webPortal.update(webStatus);
   markLoopStep(StepWeb);
   drawStatus(gpsSample, nowMs, nowUtc);
-  wifiSetup.draw(nowMs);
+  if (screenOn) wifiSetup.draw(nowMs);
   markLoopStep(StepDraw);
   loopMaxUs = std::max(loopMaxUs, micros() - loopStartUs);
   delay(2);

@@ -7,6 +7,8 @@
 // Test builds count up from v0.10 (v0.11, v0.12, ...). The first public
 // release is v1.0, once a build has been tested on every logger including the
 // Cardputer ADV. The hatched date already records when each build was made.
+// Increment kNumber before building/flashing a changed firmware revision;
+// retries and rebuilds of the same revision keep the same number.
 
 #ifndef JP226_GIT_HASH
 #define JP226_GIT_HASH "dev"
@@ -17,7 +19,7 @@
 
 namespace version {
 
-constexpr char kNumber[] = "v0.16";
+constexpr char kNumber[] = "v0.19";
 constexpr char kGit[] = JP226_GIT_HASH;
 constexpr char kDate[] = JP226_BUILD_DATE;
 

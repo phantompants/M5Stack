@@ -9,6 +9,9 @@
 
 namespace config {
 
+// Blank only the display after inactivity; telemetry and logging keep running.
+constexpr uint32_t kScreenSaverMs = 15UL * 60UL * 1000UL;
+
 // UART NMEA GPS inputs. The Grove port accepts the AT6558 and other standard
 // NMEA 0183 receivers. Its common baud rates are scanned automatically.
 #if JP226_CORE2
