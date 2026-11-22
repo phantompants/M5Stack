@@ -1,0 +1,33 @@
+{
+  "package_name": "jp226-gps-imu-logger-cp0",
+  "version": "0.1",
+  "app_name": "JP226 GPS-IMU Logger",
+  "bin_name": "jp226-gps-imu-logger-cp0",
+  "description": "GPS speed, motion-state logger and waypoints for vehicles (port of the JP226 ESP32 logger)",
+  "store": {
+    "summary": "GPS speed, motion-state logger with waypoints for vehicles (ESP32 port)",
+    "description": "Logs a vehicle's GPS track to daily CSV files named by local date, exactly like the JP226-GPS-IMU-Logger ESP32 firmware: 1 Hz while moving, every 15 minutes then hourly while stopped, once a minute with no fix. Reads NMEA from a serial GPS (device and baud auto-detected), rejects implausible fixes, follows the Australian time zone offline from the GPS position, and saves a waypoint with one key press. Pages: speed, GPS status, logger status, waypoint, diagnostics. IMU and OBD-II hooks are present but not wired yet.",
+    "categories": ["Hardware & IoT", "System Tools"],
+    "screenshots": [
+      "screenshots/1_speed.png",
+      "screenshots/2_gps.png",
+      "screenshots/3_logger.png",
+      "screenshots/4_waypoint.png"
+    ],
+    "icon": "packaging/icon.png",
+    "license": "MIT",
+    "source_repo": "https://github.com/phantompants/M5Stack/tree/main/Cardputer-Zero/JP226-GPS-IMU-Logger-CP0",
+    "author": { "github": "phantompants", "display_name": "TODO: real display name" },
+    "share_code": "TODO",
+    "permissions": {
+      "camera": false,
+      "microphone": false,
+      "imu": false,
+      "network": false,
+      "additional_hardware": true,
+      "background_service": false,
+      "external_display": false
+    },
+    "locales": {}
+  }
+}
