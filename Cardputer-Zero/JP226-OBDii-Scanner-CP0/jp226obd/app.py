@@ -17,7 +17,7 @@ from .statestore import StateStore
 from .webserver import LogWebServer, list_log_files
 
 STATE_FILE_NAME = "scanner_state.json"
-WEB_PORTS = (8080, 8000, 8888)
+WEB_PORTS = (8090, 8091, 8888, 8000)
 
 
 def default_data_dir() -> str:
@@ -97,10 +97,10 @@ class ObdScannerApp:
             "error": "",
         }
         try:
-            saved_port = int(self.store.get("web_port", 8080))
+            saved_port = int(self.store.get("web_port", WEB_PORTS[0]))
         except (TypeError, ValueError):
-            saved_port = 8080
-        self.web_port = saved_port if saved_port in WEB_PORTS else 8080
+            saved_port = WEB_PORTS[0]
+        self.web_port = saved_port if saved_port in WEB_PORTS else WEB_PORTS[0]
         self.web = LogWebServer(
             self.data_dir, port=self.web_port, profile_getter=lambda: self.profile
         )
@@ -410,10 +410,16 @@ class ObdScannerApp:
         if self.web.running and self.web.port == self.web_port:
             return
         self.web.stop()
-        self.web = LogWebServer(
-            self.data_dir, port=self.web_port, profile_getter=lambda: self.profile
-        )
-        self.web.start()
+        candidates = [self.web_port] + [p for p in WEB_PORTS if p != self.web_port] + [0]
+        for port in candidates:
+            srv = LogWebServer(
+                self.data_dir, port=port, profile_getter=lambda: self.profile
+            )
+            srv.start()
+            self.web = srv
+            if srv.running:
+                self.web_port = srv.port
+                return
 
     def stop_web(self) -> None:
         self.web.stop()

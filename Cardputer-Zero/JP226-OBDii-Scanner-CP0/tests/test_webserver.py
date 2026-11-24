@@ -7,6 +7,7 @@ import zipfile
 import io
 
 from jp226obd import scanner
+from jp226obd.app import ObdScannerApp
 from jp226obd.elm327 import Elm327
 from jp226obd.fake_elm import FakeElm
 from jp226obd.webserver import LogWebServer
@@ -59,6 +60,23 @@ class WebServerTests(unittest.TestCase):
             self.assertGreaterEqual(srv.downloads, 2)
         finally:
             srv.stop()
+
+    def test_port_conflict_falls_back_cleanly(self):
+        import socket
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blocker.bind(("0.0.0.0", 0))
+        blocker.listen(1)
+        busy_port = blocker.getsockname()[1]
+        tmp = tempfile.mkdtemp()
+        app = ObdScannerApp(data_dir=tmp)
+        try:
+            app.web_port = busy_port
+            app.start_web()
+            self.assertTrue(app.web.running)
+            self.assertNotEqual(app.web.port, busy_port)
+        finally:
+            app.close()
+            blocker.close()
 
 
 if __name__ == "__main__":

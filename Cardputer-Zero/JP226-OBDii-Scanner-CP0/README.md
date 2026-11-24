@@ -40,7 +40,7 @@ what usable telemetry a vehicle exposes for:
   (`obd_scan_<UTC>.jsonl`), structured capability profiles
   (`obd_profile_<VIN>_<UTC>.json`), and live polling traces
   (`obd_live_<UTC>.jsonl`) under `~/telemetry/obd_scanner/` (or `~/obd_scanner/`).
-  Built-in local Wi-Fi HTTP server (`SHARE` page, default port `8080`, or
+  Built-in local Wi-Fi HTTP server (`SHARE` page, default port `8090`, or
   `--web`) lets an iPhone on the same Wi-Fi view files or download individual
   logs / a single `.zip` bundle directly in Safari.
 

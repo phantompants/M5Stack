@@ -46,8 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="scan nearby BLE adapters and exit")
     p.add_argument("--web", action="store_true",
                    help="serve saved OBD logs/profiles over local Wi-Fi HTTP")
-    p.add_argument("--web-port", type=int, default=8080,
-                   help="Wi-Fi HTTP server port (default: 8080)")
+    p.add_argument("--web-port", type=int, default=8090,
+                   help="Wi-Fi HTTP server port (default: 8090)")
     p.add_argument("--version", action="version", version=__version__)
     return p
 
