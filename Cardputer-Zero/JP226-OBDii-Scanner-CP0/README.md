@@ -68,7 +68,13 @@ On the CardputerZero:
 sudo apt install python3 python3-pil python3-numpy python3-evdev python3-serial fonts-dejavu-core
 # Optional for BLE adapters:
 sudo apt install python3-bleak || pip3 install bleak
-sudo ./run.sh
+./run.sh
+```
+
+Or build & install/update directly into **M5Stack APPLaunch** in one command:
+
+```bash
+git -C ~/M5Stack pull --ff-only && ./install-applaunch.sh
 ```
 
 Headless CLI or desktop demo:
