@@ -22,7 +22,14 @@ def default_data_dir() -> str:
     env_dir = os.environ.get("JP226_OBD_DATA_DIR")
     if env_dir:
         return os.path.expanduser(env_dir)
-    return os.path.join(os.path.expanduser("~"), "telemetry", "obd_scanner")
+    preferred = os.path.join(os.path.expanduser("~"), "telemetry", "obd_scanner")
+    try:
+        os.makedirs(preferred, exist_ok=True)
+        if os.access(preferred, os.W_OK):
+            return preferred
+    except OSError:
+        pass
+    return os.path.join(os.path.expanduser("~"), "obd_scanner")
 
 
 class ObdScannerApp:

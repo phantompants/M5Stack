@@ -8,4 +8,7 @@ if [ "$(uname)" != "Linux" ]; then
 fi
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -w /dev/fb0 ]; then
+  exec python3 "$DIR/jp226_obd_scanner.py" "$@"
+fi
 exec sudo python3 "$DIR/jp226_obd_scanner.py" "$@"

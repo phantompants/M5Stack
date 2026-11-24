@@ -5,18 +5,15 @@ whole pipeline runs on a desktop (see replay_lines and the tests).
 
 import os
 import sys
-import threading
 import time
-import datetime
 from typing import Dict, Iterable, Optional
 
-from . import __version__, config, obdscan
+from . import __version__, config
 from .clock import Clock
 from .csvlog import DailyCsv, CSV_HEADER, build_telemetry_row
 from .build_info import read_build_info
 from .camera import CameraCapture
 from .dino import DinoGame
-from .elm327 import Elm327
 from .imu import ImuReader, create_default_imu
 from .location_time import LocationTime
 from .logmode import LogStateMachine
@@ -68,19 +65,10 @@ class LoggerApp:
             dino_best = 0
         self.dino = DinoGame(dino_best)
         self.obd_selection = 0
-        self.obd_link = self.store.get("obd_link", obdscan.DEFAULTS["link"])
-        if self.obd_link not in obdscan.LINK_CHOICES:
-            self.obd_link = obdscan.DEFAULTS["link"]
-        self.obd_protocol = str(self.store.get(
-            "obd_protocol", obdscan.DEFAULTS["protocol"])).upper()
-        if self.obd_protocol not in obdscan.PROTOCOL_LABELS:
-            self.obd_protocol = obdscan.DEFAULTS["protocol"]
-        self.obd_full_scan = bool(self.store.get("obd_full_scan", False))
-        self.obd_scan_status = "READY"
-        self.obd_scan_progress = ""
-        self.obd_scan_summary = ""
-        self._obd_cancel = threading.Event()
-        self._obd_thread: Optional[threading.Thread] = None
+        self.obd_profile = vehicle_settings.load_profile(
+            self.store.get("vehicle_profile"))
+        self.obd_message = "SELECT MAKE / MODEL / YEAR"
+        self.obd_status = "NOT CONNECTED"
         self.waypoint_message = ""
         self.last_key = ""
         self.source_info = {"device": "", "baud": 0, "status": "NO SOURCE"}
@@ -199,116 +187,24 @@ class LoggerApp:
     def toggle_dino_character(self) -> None:
         self.dino.toggle_character()
 
-    def select_obd_option(self, delta: int) -> None:
-        self.obd_selection = (self.obd_selection + delta) % 3
+    def select_obd_profile_field(self, delta: int) -> None:
+        self.obd_selection = (
+            self.obd_selection + delta) % len(vehicle_settings.PROFILE_FIELD_LABELS)
 
-    def adjust_obd_option(self, delta: int) -> None:
-        if self.obd_selection == 0:
-            index = obdscan.LINK_CHOICES.index(self.obd_link)
-            self.obd_link = obdscan.LINK_CHOICES[
-                (index + delta) % len(obdscan.LINK_CHOICES)]
-            self.store.put(obd_link=self.obd_link)
-        elif self.obd_selection == 1:
-            protocols = tuple(obdscan.PROTOCOL_LABELS)
-            index = protocols.index(self.obd_protocol)
-            self.obd_protocol = protocols[
-                (index + delta) % len(protocols)]
-            self.store.put(obd_protocol=self.obd_protocol)
-        else:
-            self.obd_full_scan = not self.obd_full_scan
-            self.store.put(obd_full_scan=self.obd_full_scan)
+    def adjust_obd_profile(self, delta: int) -> None:
+        field = vehicle_settings.PROFILE_FIELD_LABELS[self.obd_selection][0]
+        if vehicle_settings.adjust_profile(self.obd_profile, field, delta):
+            self.obd_message = "UNSAVED PROFILE CHANGES"
 
-    def start_obd_scan(self) -> None:
-        if self._obd_thread is not None and self._obd_thread.is_alive():
-            self.obd_scan_status = "SCAN ALREADY RUNNING"
-            return
-        cfg = dict(obdscan.DEFAULTS)
-        cfg.update({
-            "link": self.obd_link,
-            "protocol": self.obd_protocol,
-            "steps": ("adapter,standard,modules,dids" if self.obd_full_scan
-                      else "adapter,standard"),
-            "out_dir": os.path.join(self.data_dir, "obd_scans"),
-        })
-        config_path = os.path.join(self.data_dir, "obd_scan.cfg")
-        if os.path.isfile(config_path):
-            try:
-                configured = obdscan.load_config(config_path)
-            except (OSError, ValueError) as exc:
-                self.obd_scan_status = "CONFIG ERROR"
-                self.obd_scan_progress = str(exc)
-                return
-            configured.update({
-                "link": self.obd_link,
-                "protocol": self.obd_protocol,
-                "steps": cfg["steps"],
-                "out_dir": cfg["out_dir"],
-            })
-            cfg = configured
-        self._obd_cancel.clear()
-        self.obd_scan_status = "STARTING"
-        self.obd_scan_progress = ""
-        self.obd_scan_summary = ""
-        self._obd_thread = threading.Thread(
-            target=self._run_obd_scan, args=(cfg,),
-            name="jp226-obd-scan", daemon=True)
-        self._obd_thread.start()
+    def save_obd_profile(self) -> None:
+        self.store.put(vehicle_profile=dict(self.obd_profile))
+        self.obd_message = "PROFILE SAVED"
 
-    def _run_obd_scan(self, cfg: Dict[str, str]) -> None:
-        transport = None
-        log = None
-        try:
-            transport = obdscan.open_link(cfg)
-            os.makedirs(cfg["out_dir"], exist_ok=True)
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime(
-                "%Y%m%dT%H%M%SZ")
-            log_path = os.path.join(
-                cfg["out_dir"], "obd_scan_{}.jsonl".format(stamp))
-            log = obdscan.ScanLog(log_path)
-            log.write({"step": "start", "link": transport.name,
-                       "config": {k: v for k, v in cfg.items()}})
-            self.obd_scan_status = "SCANNING"
-            scanner = obdscan.Scanner(
-                Elm327(transport), log, cfg,
-                progress=self._set_obd_progress,
-                cancel_event=self._obd_cancel)
-            summary = scanner.run()
-            pids = summary.get("pids")
-            modules = summary.get("modules")
-            if not isinstance(pids, list) or not isinstance(modules, dict):
-                raise RuntimeError("OBD scanner returned an invalid summary")
-            self.obd_scan_summary = "Protocol {}  {} PIDs  {} modules".format(
-                summary.get("protocol") or "--",
-                len(pids), len(modules))
-            self.obd_scan_progress = os.path.basename(log_path)
-            self.obd_scan_status = (
-                "CANCELLED" if summary.get("cancelled") else
-                "NO ECU" if summary.get("protocol") is None else "COMPLETE")
-        except (obdscan.elm327.LinkError, OSError, ValueError, RuntimeError) as exc:
-            self.obd_scan_status = "SCAN ERROR"
-            self.obd_scan_progress = str(exc)
-            print("OBD scan: {}".format(exc), file=sys.stderr)
-        except Exception as exc:
-            self.obd_scan_status = "SCAN ERROR"
-            self.obd_scan_progress = "{}: {}".format(type(exc).__name__, exc)
-            print("OBD scan failed: {}".format(exc), file=sys.stderr)
-        finally:
-            if log is not None:
-                log.close()
-            if transport is not None:
-                transport.close()
-
-    def _set_obd_progress(self, progress: str) -> None:
-        self.obd_scan_status = "SCANNING"
-        self.obd_scan_progress = progress
+    def connect_obd(self) -> None:
+        self.obd_status = "NOT IMPLEMENTED"
+        self.obd_message = "OBD CONNECTION NOT IMPLEMENTED"
 
     def close(self) -> None:
-        if self._obd_thread is not None and self._obd_thread.is_alive():
-            self._obd_cancel.set()
-            self._obd_thread.join(timeout=6)
-            if self._obd_thread.is_alive():
-                print("OBD scan did not stop before app shutdown",
-                      file=sys.stderr)
         self.telemetry.close()
         self.waypoints.close()
 
@@ -385,15 +281,11 @@ class LoggerApp:
             "dino_best": self.dino.best,
             "dino_status": self.dino.status_text(),
             "obd_selection": self.obd_selection,
-            "obd_settings": [
-                ("ADAPTER", self.obd_link.upper()),
-                ("PROTOCOL", obdscan.PROTOCOL_LABELS[self.obd_protocol]),
-                ("SCAN", "FULL READ-ONLY" if self.obd_full_scan else "QUICK"),
-            ],
-            "obd_scan_status": self.obd_scan_status,
-            "obd_scan_progress": self.obd_scan_progress,
-            "obd_scan_summary": self.obd_scan_summary,
-            "obd_config_path": os.path.join(self.data_dir, "obd_scan.cfg"),
+            "obd_profile": [
+                (label, self.obd_profile[field])
+                for field, label in vehicle_settings.PROFILE_FIELD_LABELS],
+            "obd_status": self.obd_status,
+            "obd_message": self.obd_message,
             "build_git_hash": self.build_info["git_hash"],
             "build_date": self.build_info["build_date"],
             "data_dir": self.data_dir,
