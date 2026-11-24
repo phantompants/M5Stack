@@ -10,8 +10,8 @@ FIELD_LABELS: Tuple[Tuple[str, str], ...] = (
     ("tyre_set_fr_psi", "FR PSI"),
     ("tyre_set_rl_psi", "RL PSI"),
     ("tyre_set_rr_psi", "RR PSI"),
-    ("suspension_front", "FRONT SUSP"),
-    ("suspension_rear", "REAR SUSP"),
+    ("suspension_front", "F SUSP"),
+    ("suspension_rear", "R SUSP"),
     ("vehicle_load", "LOAD"),
 )
 
