@@ -38,7 +38,11 @@ class EvdevKeys:
             try:
                 dev = InputDevice(path)
                 caps = dev.capabilities().get(ecodes.EV_KEY, [])
-                if ecodes.KEY_ESC in caps or ecodes.KEY_Q in caps:
+                supported = (
+                    ecodes.KEY_ESC, ecodes.KEY_Q, ecodes.KEY_LEFT,
+                    ecodes.KEY_RIGHT, ecodes.KEY_W, ecodes.KEY_ENTER,
+                )
+                if any(code in caps for code in supported):
                     self.devices.append(dev)
                 else:
                     dev.close()

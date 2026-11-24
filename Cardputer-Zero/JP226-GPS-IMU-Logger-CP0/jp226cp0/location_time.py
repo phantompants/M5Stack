@@ -156,7 +156,7 @@ class LocationTime:
         """TODO: not implemented (optional). Would GET
         https://timeapi.io/api/timezone/coordinate?latitude=..&longitude=..
         and pass timeZone + currentUtcOffset.seconds to note_online_lookup().
-        Left out so the logger makes no network traffic in v0.1."""
+        Left out so the logger makes no network traffic."""
         return False
 
     def note_online_lookup(self, iana_zone: str, utc_offset_s: int,

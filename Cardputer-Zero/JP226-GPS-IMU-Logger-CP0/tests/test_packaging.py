@@ -41,7 +41,7 @@ class PackagingTests(unittest.TestCase):
         m = self.manifest
         self.assertEqual(m["package_name"], "jp226-gps-imu-logger-cp0")
         self.assertEqual(m["app_name"], "JP226 GPS-IMU Logger")
-        self.assertEqual(m["version"], "0.1")
+        self.assertEqual(m["version"], "0.2")
         self.assertTrue(m["bin_name"])
         self.assertRegex(m["package_name"], r"^[a-z0-9][a-z0-9.+-]*$")
 
@@ -55,7 +55,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(set(s["permissions"]), PERMISSIONS)
         self.assertTrue(all(isinstance(v, bool) for v in s["permissions"].values()))
         self.assertEqual({k for k, v in s["permissions"].items() if v},
-                         {"additional_hardware"})
+                         {"additional_hardware", "camera", "imu"})
         self.assertEqual(
             s["source_repo"],
             "https://github.com/phantompants/M5Stack/tree/main/Cardputer-Zero/"

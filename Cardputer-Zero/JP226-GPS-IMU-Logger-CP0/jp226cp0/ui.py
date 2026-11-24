@@ -1,17 +1,14 @@
-"""320x170 pages drawn with Pillow (optional dependency).
-
-render_page(index, model) -> PIL.Image. `model` is LoggerApp.ui_model(). Pages:
-SPEED, GPS, LOGGER, WAYPOINT, DIAG. DIAG exists for hardware bring-up: it shows
-the serial device/baud that was detected, NMEA counters, the last raw key name
-and the data directory, which is what has to be confirmed on the real device.
-"""
+"""320x170 dashboard and dinosaur pages drawn with Pillow."""
 
 import os
 from typing import Dict, Optional
 
 from . import APP_TITLE, hardware
 
-PAGES = ("SPEED", "GPS", "LOGGER", "WAYPOINT", "DIAG")
+PAGES = ("SPEED", "GPS", "IMU", "LOGGER", "WAYPOINT", "SETUP", "DIAG",
+         "FOSSIL RECORD", "DINO DASH")
+SETTINGS_PAGE_INDEX = PAGES.index("SETUP")
+DINO_PAGE_INDEX = PAGES.index("DINO DASH")
 
 _BG = (8, 10, 16)
 _PANEL = (22, 27, 40)
@@ -166,20 +163,55 @@ def _page_logger(draw, f, m, w, h):
     ])
 
 
+def _page_imu(draw, f, m, w, h):
+    sample = m["imu_sample"]
+    if not m["imu_available"] or sample is None or not sample.valid:
+        message = m["imu_error"] or "IMU NOT READY"
+        _text(draw, w // 2, 58, message[:34], f.row, _WARN, "c")
+        _text(draw, w // 2, 82, m["imu"], f.small, _DIM, "c")
+        return
+    _rows(draw, f, [
+        ("ACC m/s2", "{:.2f}  {:.2f}  {:.2f}".format(
+            sample.ax_mps2, sample.ay_mps2, sample.az_mps2), _TEXT),
+        ("GYRO dps", "{:.1f}  {:.1f}  {:.1f}".format(
+            sample.gx_dps, sample.gy_dps, sample.gz_dps), _TEXT),
+        ("PITCH/ROLL", "{:.1f} / {:.1f} deg".format(
+            sample.pitch_deg, sample.roll_deg), _TEXT),
+        ("VIB RMS", "{:.3f} m/s2".format(sample.vibration_rms_mps2), _TEXT),
+        ("SAMPLES", str(sample.sample_count), _DIM),
+    ])
+
+
 def _page_waypoint(draw, f, m, w, h):
     last = m["waypoint_last"]
     msg = m["waypoint_message"]
-    colour = _GOOD if msg.endswith("SAVED") else (_BAD if msg else _DIM)
+    colour = _BAD if "ERROR" in msg else (_GOOD if "SAVED" in msg else _DIM)
     _text(draw, w // 2, 32, msg or "READY", f.big, colour, "c")
-    _text(draw, w // 2, 58, "press W or Enter to save", f.small, _DIM, "c")
+    _text(draw, w // 2, 56, "W/Enter saves waypoint + photo", f.small, _DIM, "c")
     if last:
         _rows(draw, f, [
             ("LAST", last["id"], _TEXT),
             ("LAT", _fmt(last["lat"], ".6f"), _TEXT),
             ("LON", _fmt(last["lon"], ".6f"), _TEXT),
-        ], top=84)
+            ("PHOTO", os.path.basename(last.get("photo", "")) or m["camera_message"] or "--",
+             _TEXT),
+            ("ROAD", last.get("road_type") or "--", _TEXT),
+        ], top=76, step=18)
     else:
         _text(draw, w // 2, 100, "no waypoint yet", f.row, _DIM, "c")
+
+
+def _page_setup(draw, f, m, w, h):
+    _text(draw, 8, 24, "UP/DOWN select   A/D edit", f.small, _DIM)
+    for i, (label, value) in enumerate(m["vehicle_settings"]):
+        y = 42 + i * 12
+        selected = i == m["vehicle_selection"]
+        if selected:
+            draw.rectangle([4, y - 1, w - 4, y + 11], fill=_PANEL)
+        colour = _ACCENT if selected else _TEXT
+        _text(draw, 10, y, label, f.small, colour)
+        _text(draw, w - 10, y, value, f.small, colour, "r")
+    _text(draw, w // 2, 154, "Saved automatically   W=done", f.small, _DIM, "c")
 
 
 def _page_diag(draw, f, m, w, h):
@@ -196,11 +228,130 @@ def _page_diag(draw, f, m, w, h):
         ("IMU/CLK", "{} / {}{}".format(m["imu"], m["clock_source"],
                                        " (gps ok)" if m["clock_gps_synced"] else ""),
          _TEXT),
-    ], step=20)
-    _text(draw, 8, 150, "v{}  HW UNVERIFIED".format(m["version"]), f.small, _WARN)
+        ("CAMERA", m["camera_message"] or
+         ("READY" if m["camera_available"] else "NOT FOUND"), _TEXT),
+    ], step=17)
+    if m["imu_error"]:
+        _text(draw, 8, 150, m["imu_error"][:44], f.small, _WARN)
+    else:
+        _text(draw, 8, 150, "v{}  {}".format(m["version"], m["data_dir"][-30:]),
+              f.small, _DIM)
 
 
-_PAGE_FUNCS = (_page_speed, _page_gps, _page_logger, _page_waypoint, _page_diag)
+def _page_fossil(draw, f, m, w, h):
+    _text(draw, 8, 30, "JP226 GPS-IMU LOGGER", f.row, _ACCENT)
+    _text(draw, 8, 51, "VERSION", f.small, _DIM)
+    _text(draw, 106, 49, "v" + m["version"], f.row, _TEXT)
+    _text(draw, 8, 72, "BUILD", f.small, _DIM)
+    _text(draw, 106, 70, m["build_git_hash"], f.row, _TEXT)
+    _text(draw, 8, 93, "DATE", f.small, _DIM)
+    _text(draw, 106, 91, m["build_date"], f.row, _TEXT)
+    _text(draw, w // 2, 124, m["fossil_joke"], f.small, _WARN, "c")
+    _text(draw, w - 8, 148, "Python port", f.small, _DIM, "r")
+
+
+_DINO_FRAMES = (
+    (
+        "...................GGGGG", "..................GGGWKG",
+        ".................GGGGGGG", "..................GGGGGG",
+        "...............GGGGGGGGG", ".............GGGGGGGGGGG",
+        ".......D.D.D.GGGGGGGGGG.", "....GGGGGGGGGGGGGGGG....",
+        "..GGJGGJGGJGGGGGGGGG....", "...GGDGGDGGDGGGGGGG.....",
+        "....GGGGGGGGGGGGGG......", "......GGGGGGGGGGGG......",
+        ".......GG....GG.........", ".......GG....GG.........",
+        "......GGGG..GGGG........", "........................",
+    ),
+    (
+        "...................GGGGG", "..................GGGWKG",
+        ".................GGGGGGG", "..................GGGGGG",
+        "...............GGGGGGGGG", ".............GGGGGGGGGGG",
+        ".......D.D.D.GGGGGGGGGG.", "....GGGGGGGGGGGGGGGG....",
+        "..GGJGGJGGJGGGGGGGGG....", "...GGDGGDGGDGGGGGGG.....",
+        "....GGGGGGGGGGGGGG......", "......GGGGGGGGGGGG......",
+        "......GG....GG..........", "......GG....GG..........",
+        ".....GGGG..GGGG.........", "........................",
+    ),
+)
+_DINO_COLOURS = {
+    "G": (60, 180, 75), "D": (30, 110, 40),
+    "J": (150, 210, 115), "W": (255, 255, 255), "K": (0, 0, 0),
+}
+_JOKES = (
+    "No dinos were harmed", "Small arms, big logs", "Runs on fossil fuel",
+    "Rawr means logging", "Data finds a way", "Clever girl.",
+    "Must go faster!", "Bugs now extinct*", "T-Rex approved",
+    "Jurassic parking OK", "Tracks since 65M BC", "Dino-mite firmware",
+)
+
+
+def _draw_dino(draw, x, y, scale, frame):
+    rows = _DINO_FRAMES[frame % len(_DINO_FRAMES)]
+    for row, line in enumerate(rows):
+        for col, pixel in enumerate(line):
+            colour = _DINO_COLOURS.get(pixel)
+            if colour:
+                left, top = x + col * scale, y + row * scale
+                draw.rectangle([left, top, left + scale - 1, top + scale - 1],
+                               fill=colour)
+
+
+def _page_dino(draw, f, m, w, h):
+    scale = 2
+    left = 4
+    play_width = w - 8
+    ground_y = 126
+    now_ms = m["now_ms"]
+    _text(draw, w // 2, 25, m["dino_status"] or
+          ("AUTORUN  >5 KM/H" if m["dino_moving"] else "PARKED: PRESS SPACE"),
+          f.small, _WARN, "c")
+    if m["dino_moving"]:
+        span = play_width + 24 * scale
+        x = left + int((now_ms // 25) % span) - 24 * scale
+        _draw_dino(draw, x, ground_y - 16 * scale, scale,
+                   (now_ms // 150) % 2)
+        for gx in range(left - int((now_ms // 25) % (4 * scale)),
+                        left + play_width, 4 * scale):
+            draw.line([gx, ground_y, gx + 2 * scale, ground_y],
+                      fill=(123, 123, 123), width=1)
+    else:
+        draw.line([left, ground_y, left + play_width, ground_y],
+                  fill=(123, 123, 123), width=1)
+        for obstacle in m["dino_obstacles"]:
+            x = left + int(obstacle["x"] * scale)
+            width = obstacle["width"] * scale
+            height = obstacle["height"] * scale
+            if x >= left + play_width or x + width <= left:
+                continue
+            if obstacle["cactus"]:
+                draw.rectangle([x + 2 * scale, ground_y - height,
+                                x + 3 * scale, ground_y - 1], fill=(40, 160, 60))
+                draw.rectangle([x, ground_y - 6 * scale,
+                                x + 2 * scale - 1, ground_y - 5 * scale],
+                               fill=(40, 160, 60))
+                draw.rectangle([x, ground_y - 8 * scale,
+                                x + scale - 1, ground_y - 5 * scale],
+                               fill=(40, 160, 60))
+                draw.rectangle([x + 4 * scale, ground_y - 4 * scale,
+                                x + 6 * scale - 1, ground_y - 3 * scale],
+                               fill=(40, 160, 60))
+            else:
+                draw.rounded_rectangle(
+                    [x, ground_y - height, x + width - 1, ground_y - 1],
+                    radius=scale, fill=(132, 132, 132))
+        y = ground_y - 16 * scale - int(m["dino_y"] * scale)
+        _draw_dino(draw, left + 4 * scale, y, scale,
+                   (now_ms // 150) % 2 if m["dino_state"] == "PLAYING" else 0)
+    hint = "AUTORUN WHILE MOVING" if m["dino_moving"] else \
+        "SPACE / ENTER / ;  JUMP"
+    _text(draw, w // 2, 134, hint, f.small, _DIM, "c")
+    _text(draw, w // 2, 150, "Brought to you by JP226Prints", f.small,
+          _ACCENT, "c")
+
+
+_PAGE_FUNCS = (
+    _page_speed, _page_gps, _page_imu, _page_logger, _page_waypoint,
+    _page_setup, _page_diag, _page_fossil, _page_dino,
+)
 
 
 def render_page(index: int, model: Dict,
@@ -212,7 +363,13 @@ def render_page(index: int, model: Dict,
     image = Image.new("RGB", (width, height), _BG)
     draw = ImageDraw.Draw(image)
     _header(draw, f, "{}  {}".format(APP_TITLE.split()[0], PAGES[index]), model, width)
-    _PAGE_FUNCS[index](draw, f, model, width, height)
+    if index == PAGES.index("FOSSIL RECORD"):
+        page_model = dict(model)
+        page_model["fossil_joke"] = _JOKES[
+            (model["now_ms"] // 4000) % len(_JOKES)]
+    else:
+        page_model = model
+    _PAGE_FUNCS[index](draw, f, page_model, width, height)
     _footer(draw, index, width, height)
     return image
 
@@ -222,7 +379,8 @@ def save_screenshots(model: Dict, directory: str) -> list:
     os.makedirs(directory, exist_ok=True)
     paths = []
     for i, name in enumerate(PAGES):
-        path = os.path.join(directory, "{}_{}.png".format(i + 1, name.lower()))
+        path = os.path.join(
+            directory, "{}_{}.png".format(i + 1, name.lower().replace(" ", "_")))
         render_page(i, model).save(path)
         paths.append(path)
     return paths

@@ -4,12 +4,16 @@ whole pipeline runs on a desktop (see replay_lines and the tests).
 """
 
 import os
+import sys
 from typing import Dict, Iterable, Optional
 
 from . import __version__, config
 from .clock import Clock
 from .csvlog import DailyCsv, CSV_HEADER, build_telemetry_row
-from .imu import ImuReader, NullImu
+from .build_info import read_build_info
+from .camera import CameraCapture
+from .dino import DinoGame
+from .imu import ImuReader, create_default_imu
 from .location_time import LocationTime
 from .logmode import LogStateMachine
 from .nmea import GpsState, parse_date, parse_line, parse_time_of_day
@@ -20,6 +24,7 @@ from .snapshot import GpsSnapshot, take_gps_snapshot
 from .statestore import StateStore
 from .timeutil import (civil_from_epoch, days_from_civil, local_date_text)
 from .waypoints import WaypointStore
+from . import vehicle as vehicle_settings
 
 STATE_FILE_NAME = "logger_state.json"
 
@@ -28,13 +33,14 @@ class LoggerApp:
     def __init__(self, settings: Settings, data_dir: str,
                  clock: Optional[Clock] = None,
                  imu: Optional[ImuReader] = None,
-                 obd: Optional[ObdSource] = None):
+                 obd: Optional[ObdSource] = None,
+                 camera: Optional[CameraCapture] = None):
         self.settings = settings
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
         self.store = StateStore(os.path.join(data_dir, STATE_FILE_NAME))
         self.clock = clock if clock is not None else Clock(settings.clock_source)
-        self.imu = imu if imu is not None else NullImu()
+        self.imu = imu if imu is not None else create_default_imu()
         self.obd = obd if obd is not None else NullObd()  # extension point only
         self.gps = GpsState()
         self.guard = Plausibility()
@@ -44,7 +50,17 @@ class LoggerApp:
         self.telemetry = DailyCsv(data_dir, config.FILE_PREFIX, CSV_HEADER)
         self.waypoints = WaypointStore(data_dir, self.store)
         self.snapshot = GpsSnapshot()
-        self.vehicle: Dict[str, str] = {"road_type": "", "road_surface": ""}
+        self.vehicle: Dict[str, object] = vehicle_settings.load(
+            self.store.get("vehicle_setup"))
+        self.vehicle_selection = 0
+        self.camera = camera if camera is not None else CameraCapture(data_dir)
+        self.camera_message = ""
+        self.build_info = read_build_info()
+        try:
+            dino_best = int(self.store.get("dino_pb", 0))
+        except (TypeError, ValueError):
+            dino_best = 0
+        self.dino = DinoGame(dino_best)
         self.waypoint_message = ""
         self.last_key = ""
         self.source_info = {"device": "", "baud": 0, "status": "NO SOURCE"}
@@ -70,6 +86,9 @@ class LoggerApp:
         self.machine.update(snap, now_ms, now_utc)
         self.imu.update(now_ms)
         self.obd.update(now_ms)  # extension point: result unused for now
+        self.dino.update(now_ms, snap.speed_kmh if snap.speed_fresh else 0.0, 160)
+        if self.dino.take_new_best():
+            self.store.put(dino_pb=self.dino.best)
         if utc_ms is not None and self.machine.log_is_due(now_ms, now_utc):
             if self._write_row(snap, now_ms, utc_ms):
                 self.machine.on_log_succeeded(now_ms, now_utc)
@@ -97,21 +116,56 @@ class LoggerApp:
             now_ms = self.last_tick_ms
         snap = self.snapshot
         utc_ms = self.clock.now_utc_ms(now_ms)
+        self.camera_message = ""
         if not snap.fix_valid:
             self.waypoint_message = "NO FIX"
         elif utc_ms is None:
             self.waypoint_message = "NO CLOCK"
         else:
             offset_s = self.location_time.offset_at(utc_ms // 1000)
+            photo_reference = ""
+            self.camera_message = ""
+            if self.camera.available:
+                try:
+                    photo_reference = self.camera.capture_waypoint(
+                        self.waypoints.next_waypoint_id)
+                except (OSError, RuntimeError) as exc:
+                    self.camera_message = "PHOTO ERROR"
+                    print("waypoint photo: {}".format(exc), file=sys.stderr)
+            else:
+                self.camera_message = "NO CAMERA"
             record = self.waypoints.create(
                 snap, utc_ms, offset_s,
                 road_type=self.vehicle["road_type"],
-                road_surface=self.vehicle["road_surface"])
+                road_surface=self.vehicle["road_surface"],
+                vehicle_setup=self.vehicle,
+                photo_reference=photo_reference)
             if record is None:
+                if photo_reference:
+                    try:
+                        self.camera.remove_photo(photo_reference)
+                    except OSError as exc:
+                        self.camera_message = "PHOTO CLEANUP ERROR"
+                        print("waypoint photo cleanup: {}".format(exc),
+                              file=sys.stderr)
                 self.waypoint_message = "WRITE FAILED"
             else:
                 self.waypoint_message = record["id"] + " SAVED"
+                if self.camera_message == "PHOTO ERROR":
+                    self.waypoint_message += " PHOTO ERROR"
         return self.waypoint_message
+
+    def select_vehicle_setting(self, delta: int) -> None:
+        self.vehicle_selection = (
+            self.vehicle_selection + delta) % len(vehicle_settings.FIELD_LABELS)
+
+    def adjust_vehicle_setting(self, delta: int) -> None:
+        field = vehicle_settings.FIELD_LABELS[self.vehicle_selection][0]
+        if vehicle_settings.adjust(self.vehicle, field, delta):
+            self.store.put(vehicle_setup=self.vehicle)
+
+    def press_dino(self, now_ms: int) -> None:
+        self.dino.press(now_ms)
 
     def close(self) -> None:
         self.telemetry.close()
@@ -135,8 +189,10 @@ class LoggerApp:
             next_due = "{} min".format(max(0, wait) // 60) if wait >= 60 else \
                 "{} s".format(max(0, wait))
         last = self.waypoints.last
+        imu_sample = self.imu.latest_sample()
         return {
             "version": __version__,
+            "now_ms": now_ms,
             "speed_kmh": snap.speed_kmh if snap.speed_fresh else None,
             "fix_valid": snap.fix_valid,
             "satellites": snap.satellites if snap.satellites_valid else None,
@@ -160,6 +216,12 @@ class LoggerApp:
             "clock_gps_synced": self.clock.gps_synced,
             "waypoint_last": last,
             "waypoint_message": self.waypoint_message,
+            "camera_message": self.camera_message,
+            "camera_available": self.camera.available,
+            "vehicle_settings": [
+                (label, vehicle_settings.display_value(field, self.vehicle[field]))
+                for field, label in vehicle_settings.FIELD_LABELS],
+            "vehicle_selection": self.vehicle_selection,
             "gps_device": self.source_info.get("device", ""),
             "gps_baud": self.source_info.get("baud", 0),
             "gps_status": self.source_info.get("status", ""),
@@ -168,6 +230,20 @@ class LoggerApp:
             "sentence_counts": dict(self.gps.counts),
             "last_key": self.last_key,
             "imu": self.imu.type_name,
+            "imu_available": self.imu.available,
+            "imu_error": self.imu.last_error,
+            "imu_sample": imu_sample,
+            "dino_state": self.dino.state,
+            "dino_moving": self.dino.moving,
+            "dino_y": self.dino.y,
+            "dino_obstacles": [
+                {"x": o.x, "width": o.width, "height": o.height,
+                 "cactus": o.cactus} for o in self.dino.obstacles],
+            "dino_score": self.dino.score,
+            "dino_best": self.dino.best,
+            "dino_status": self.dino.status_text(),
+            "build_git_hash": self.build_info["git_hash"],
+            "build_date": self.build_info["build_date"],
             "data_dir": self.data_dir,
         }
 

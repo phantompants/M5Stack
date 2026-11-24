@@ -89,7 +89,9 @@ class KeyTests(unittest.TestCase):
     def test_actions(self):
         self.assertEqual(keys.action_for("KEY_TAB"), keys.NEXT_PAGE)
         self.assertEqual(keys.action_for("KEY_RIGHTBRACE"), keys.NEXT_PAGE)
+        self.assertEqual(keys.action_for("KEY_RIGHT"), keys.NEXT_PAGE)
         self.assertEqual(keys.action_for("KEY_LEFTBRACE"), keys.PREV_PAGE)
+        self.assertEqual(keys.action_for("KEY_LEFT"), keys.PREV_PAGE)
         self.assertEqual(keys.action_for("KEY_W"), keys.WAYPOINT)
         self.assertEqual(keys.action_for("KEY_ENTER"), keys.WAYPOINT)
         self.assertEqual(keys.action_for("KEY_ESC"), keys.QUIT)
@@ -98,7 +100,10 @@ class KeyTests(unittest.TestCase):
 
     def test_all_mapped_names_are_valid_linux_key_names(self):
         for name in (hardware.KEYS_NEXT_PAGE + hardware.KEYS_PREV_PAGE +
-                     hardware.KEYS_WAYPOINT + hardware.KEYS_QUIT):
+                     hardware.KEYS_WAYPOINT + hardware.KEYS_QUIT +
+                     hardware.KEYS_SETTING_PREV + hardware.KEYS_SETTING_NEXT +
+                     hardware.KEYS_SETTING_DEC + hardware.KEYS_SETTING_INC +
+                     hardware.KEYS_DINO_JUMP):
             self.assertRegex(name, r"^KEY_[A-Z0-9]+$")
 
 

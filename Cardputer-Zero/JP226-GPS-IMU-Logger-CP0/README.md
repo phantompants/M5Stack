@@ -1,33 +1,28 @@
-# JP226 GPS-IMU Logger for the M5Stack CardputerZero (base code, v0.1)
+# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v0.2)
 
 A Python 3 port of the [JP226-GPS-IMU-Logger](https://github.com/phantompants/JP226-GPS-IMU-Logger)
 ESP32 firmware: it logs a vehicle's GPS track to daily CSV files, with the same
 state machine, thresholds and CSV columns, plus waypoints and a 320x170 display.
 
-> **Status: first hardware arrival checks completed.** The project is installed
-> as a checkout at `/home/pi/JP226-GPS-IMU-Logger-CP0` on the CardputerZero.
-> The core (NMEA parsing, fix gate, state machine, time zones, CSV and waypoint
-> files) passes 166 desktop tests and 166 device-side tests. The ST7789V
-> framebuffer is confirmed at 320x170, 16 bpp on `/dev/fb0`, serial is present
-> through `/dev/serial0` -> `/dev/ttyS0`, and the runtime Python dependencies
-> are installed. GPS, matrix-key mapping and IMU integration remain to be
-> confirmed. Hardware assumptions live in [`jp226cp0/hardware.py`](jp226cp0/hardware.py).
+> **Hardware status:** installed on the CardputerZero (Raspberry Pi CM0) at
+> `/home/pi/JP226-GPS-IMU-Logger-CP0`. The 320x170 RGB565 framebuffer, GPS Cap,
+> BMI270 IMU (`/sys/bus/iio`), IMX219 camera (`/dev/video0`), and required Linux
+> utilities have been confirmed. Run `python3 -m unittest discover` for the
+> current desktop suite; hardware-dependent camera behavior still needs a
+> device-side check after installing the updated package.
 
-## M5Launcher vs APPLaunch (read this first)
+## Platform and package
 
-The CardputerZero is **not an ESP32**. It is a Raspberry Pi CM0 (quad Cortex-A53,
-512 MB) running Linux, with a 320x170 ST7789V LCD on `/dev/fb0` (RGB565), a
-46-key matrix keyboard (evdev), an IMU, an RTC, a 14-pin expansion header
-(SPI/UART/I2C/USB/GPIO) and a Grove port.
+The CardputerZero is a Raspberry Pi CM0 (quad Cortex-A53, 512 MB) running
+Linux, with a 320x170 ST7789V LCD on `/dev/fb0` (RGB565), a 46-key matrix
+keyboard, an IMU, an RTC, a 14-pin expansion header and a Grove port. This is a
+Linux Python application; ESP32 firmware binaries do not run on the Zero.
 
-bmorcelli's **M5Launcher is ESP32-only**, so it cannot install or run this app,
-and the ESP32 firmware binaries cannot run on the Zero. CardputerZero apps use
-the official [AppBuilder](https://github.com/CardputerZero/AppBuilder)
-toolchain: an app is an aarch64 or arch-all **`.deb`** published with the
-`czdev` CLI to the CardputerZero AppStore, and started from the on-device
-launcher, **APPLaunch**. This app is plain Python 3 (like AppBuilder's
-`Python_FrameBuffer_HelloWorld` example), so the package is architecture
-independent.
+CardputerZero apps use the official
+[AppBuilder](https://github.com/CardputerZero/AppBuilder) toolchain. This app
+is packaged as an aarch64 **`.deb`**, published with the `czdev` CLI to the
+CardputerZero AppStore, and launched by the on-device **APPLaunch**. It is plain
+Python 3 (like AppBuilder's `Python_FrameBuffer_HelloWorld` example).
 
 ## How it relates to the ESP32 firmware
 
@@ -41,12 +36,16 @@ Ported faithfully (same constants, from `include/Config.h`):
 | Rates | 1 Hz moving; stop+15, 30, 45, 60 min then hourly while stopped; 60 s while fix lost; the stop session is persisted (`logger_state.json`) and continued after a restart |
 | Files | `telemetry_YYYY-MM-DD.csv` named by **local** date, the identical 63-column header, UTC `timestamp` + `local_timestamp` with offset, timestamps never go backwards, a file with another header is renamed `-old.csv` |
 | Time zone | offline Australian table from lat/lon (`TimezoneFallback`), same answer 3 checks 30 s apart before it changes, 100 km trust radius around an online lookup (lookup itself is a TODO), POSIX rules evaluated by a built-in engine so no tz database is needed |
-| Waypoints | key press writes `waypoints_YYYY-MM-DD.csv` (28 firmware columns; what the Zero cannot fill stays empty) and `events_YYYY-MM-DD.csv` |
-| Settings | `key=value` file mirroring `logger.cfg` (`timezone`, `timezone_auto`) |
+| Waypoints | `W`/Enter saves a waypoint and attempts a camera photo; existing 28-column waypoint schema stores the photo reference and vehicle setup |
+| IMU | BMI270 IIO acceleration/gyro feed the unchanged telemetry schema and IMU page |
+| Vehicle setup | On-device presets for road, surface, suspension and load plus per-wheel tyre PSI; saved in `logger_state.json` |
+| Game/version | FOSSIL RECORD shows app/build details; parked Dino Dash uses an articulated-tail, Flexi-Rex-style T. rex that auto-runs above 5 km/h |
+| Settings | `key=value` file mirrors `logger.cfg` (`timezone`, `timezone_auto`) |
 
-`telemetry_source` is `LOCAL_GPS`; `imu_available` is `0` and the IMU columns are
-empty until an IMU reader is plugged in. Existing tooling (`tools/merge_obd.py`,
-the KML scripts) reads these files unchanged.
+`telemetry_source` remains `LOCAL_GPS`. The 63-column telemetry header is
+unchanged; setup values are written to the existing waypoint columns. Existing
+tooling (`tools/merge_obd.py`, the KML scripts) reads the telemetry files
+unchanged.
 
 Deliberate differences: date and time come from RMC only (one atomic pair); an
 empty course field is left to age out instead of becoming 0; the clock is kept
@@ -57,22 +56,27 @@ or web portal in this base.
 
 ## Hardware status and remaining checks
 
-| # | Assumption (all in `jp226cp0/hardware.py`) | How to confirm on the device |
-| - | --- | --- |
-| 1 | **PARTIAL:** `/dev/serial0` -> `/dev/ttyS0` is confirmed on the Zero. The M5 Cap LoRa-1262 / ATGM336H wiring and whether NMEA is present remain unverified. | Attach the GPS, then run `sudo python3 jp226_logger.py` and read the DIAG page (port, baud, NMEA ok/bad). Set `gps_device`/`gps_baud` if auto-detect fails. |
-| 2 | 115200 baud (`kCapGpsBaud`), then 9600, 38400, 4800, 19200, 57600 (the firmware's Grove scan list). | DIAG page shows the detected baud; `sudo cat /dev/ttyXXX` after `stty -F /dev/ttyXXX 115200` should print `$GNRMC...`. |
-| 3 | **CONFIRMED:** `/dev/fb0` is 320x170, 16 bpp (RGB565) as in the AppBuilder example. | `fbset -i`; launch the app and inspect the DIAG page. |
-| 4 | Keys are `KEY_TAB`/`KEY_RIGHTBRACE` (next page), `KEY_LEFTBRACE` (previous), `KEY_W`/`KEY_ENTER` (waypoint), `KEY_ESC`/`KEY_Q` (quit). The matrix driver's real codes are unknown. | Press keys and read "LAST KEY" on the DIAG page (or `sudo evtest`); fix `KEYS_*` in `hardware.py`. |
-| 5 | The IMU is not read (chip and bus unknown). | Identify the chip (`i2cdetect`, `/sys/bus/iio`), then implement `imu.ImuReader`. |
-| 6 | The system clock may not be set at boot; the app disciplines its own clock from GPS time and uses the system clock only before the first GPS time (and only if the year >= 2024). | `timedatectl`; with `clock_source=gps` the app ignores the system clock completely. |
-| 7 | **PARTIAL:** `/dev/fb0` and `/dev/ttyS0` exist. The `pi` account belongs to `video`, `input` and `dialout`; runtime launch and framebuffer write access remain to be tested. | Run `./run.sh`, then check that pages render and key events arrive. |
-| 8 | Data goes to `~/telemetry` of the invoking user (`SUDO_USER` under `run.sh`). How APPLaunch starts the app and as whom is unknown. | Check where files land; set `data_dir`. |
-| 9 | Packaging: scripts mirror `Python_FrameBuffer_HelloWorld` (`APP_INSTALL_DIR`, `INSTALL_PREFIX`, hard-coded launcher path). | Build with the AppBuilder pipeline and install the `.deb`. |
+- **GPS:** the Cap GPS receiver is visible through the Linux serial interface;
+  DIAG shows the detected port, baud and NMEA counters.
+- **Display:** `/dev/fb0` is confirmed at 320x170, 16 bpp (RGB565).
+- **IMU:** BMI270 is read through Linux IIO at its reported acceleration and
+  angular-velocity scales. If no BMI270 is present, desktop use falls back to
+  the null reader and shows the reason on DIAG when sensor initialization fails.
+- **Camera:** the built-in IMX219 is available at `/dev/video0`; waypoint photos
+  use `rpicam-still` and are stored under `~/telemetry/photos/`. If capture
+  fails, the waypoint is still saved and the error is shown/logged.
+- **Keyboard:** Left/Right and Tab/brackets change pages. On SETUP, Up/Down
+  select a value and A/D adjust it. On DINO DASH, Space/Enter/semicolon jumps.
+  `W` or Enter saves a waypoint on other pages; Esc/Q quits.
+- **AtomS3:** the Zero already has a BMI270, so an AtomS3 is not needed for
+  local IMU. It could provide ESP-NOW as a radio coprocessor, but that requires
+  separate bridge firmware and a confirmed Grove transport; this release does
+  not claim AtomS3-to-Linux ESP-NOW support.
+- **LoRa antenna:** keep the external antenna attached whenever the Cap LoRa
+  module is powered, even if the logger is not actively using LoRa.
 
-The first on-device transfer used the wired address `192.168.1.220` (the wireless
-address was `192.168.100.65`). `python3-evdev`, PIL, NumPy, pyserial and the
-DejaVu fonts are installed. The project passes on-device unit tests on Linux
-Python 3.13.5.
+The `pi` account belongs to `video`, `input`, `dialout` and `i2c`. The installed
+runtime is Linux aarch64 with Python 3.13.5.
 
 ## Install and run
 
@@ -85,8 +89,18 @@ sudo ./run.sh --headless           # log only, status line every 10 s
 python3 jp226_logger.py --gps-device /dev/ttyAMA0 --gps-baud 115200
 ```
 
-Keys: `Tab` or `]` next page, `[` previous page, `w` or `Enter` waypoint,
-`Esc` or `q` quit (see assumption 4). Pages: SPEED, GPS, LOGGER, WAYPOINT, DIAG.
+Keys: `Left`/`Right` (or `Tab`/brackets) navigate pages; `w`/`Enter` saves a
+waypoint outside the SETUP and DINO DASH pages; `Esc`/`q` quits. Pages: SPEED,
+GPS, IMU, LOGGER, WAYPOINT, SETUP, DIAG, FOSSIL RECORD, and DINO DASH. The
+SETUP page edits the vehicle profile, saved immediately to app state. A
+waypoint automatically captures a photo when `rpicam-still` is available.
+
+On SETUP, Up/Down selects ROAD (`PAVED`, `GRAVEL`, `DIRT`, `TRAIL`), SURFACE
+(`DRY`, `DAMP`, `WET`, `VERY WET`), FL/FR/RL/RR tyre PSI, front/rear suspension
+(`SOFT`, `NORMAL`, `FIRM`) or LOAD (`SOLO`, `LIGHT`, `HEAVY`); A/D changes the
+selected value. The first tyre-pressure edit sets it to 30 PSI, then each edit
+changes it by 1 PSI. Dino Dash runs automatically above 5 km/h and becomes
+playable below 3 km/h; Space, Enter or semicolon jumps.
 
 ## Build an AppStore-compatible package
 
@@ -102,7 +116,7 @@ To publish a built package, clone
 `./czdev login` once, then from that checkout run:
 
 ```bash
-./czdev bump --deb /path/to/jp226-gps-imu-logger-cp0_0.1-1_arm64.deb
+./czdev bump --deb /path/to/jp226-gps-imu-logger-cp0_0.2-1_arm64.deb
 ./czdev publish --deb /path/to/the-version-shown-by-bump_arm64.deb
 ```
 
@@ -131,8 +145,9 @@ framebuffer. `--screenshot DIR` writes one 320x170 PNG per page.
 
 Default data directory: `~/telemetry` (override with `data_dir` or
 `JP226_CP0_DATA_DIR`, or `--out`). It contains `telemetry_*.csv`,
-`waypoints_*.csv`, `events_*.csv` and `logger_state.json` (stopped-session state,
-saved time zone, waypoint counter).
+`waypoints_*.csv`, `events_*.csv`, waypoint photos in `photos/`, and
+`logger_state.json` (stopped-session state, saved time zone, waypoint counter,
+vehicle setup and Dino Dash personal best).
 
 Settings file, first found of: `--config`, `$JP226_CP0_CONFIG`,
 `~/.config/jp226-gps-imu-logger/logger.cfg`, `/etc/jp226-gps-imu-logger/logger.cfg`.
@@ -144,8 +159,10 @@ password in this repository.
 
 ## Extension points
 
-- IMU: [`jp226cp0/imu.py`](jp226cp0/imu.py) (`ImuReader`), pass to `LoggerApp(imu=...)`.
-  Chip and bus are not guessed.
+- IMU: [`jp226cp0/imu.py`](jp226cp0/imu.py) implements the BMI270 IIO reader;
+  other hosts without that sensor use `NullImu`.
+- AtomS3 ESP-NOW bridge: not implemented. Grove bus/pin and bridge protocol
+  must be verified before adding firmware or claiming support.
 - OBD-II logging: [`jp226cp0/obd.py`](jp226cp0/obd.py), an empty `ObdSource` stub
   for a future module. Not implemented (but see the scanner below, whose
   [`elm327.py`](jp226cp0/elm327.py) link it can reuse).

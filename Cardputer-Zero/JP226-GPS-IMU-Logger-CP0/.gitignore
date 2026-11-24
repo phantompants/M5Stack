@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 replay_out/
 *.deb
+build_stamp.json

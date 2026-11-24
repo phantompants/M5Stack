@@ -1,10 +1,4 @@
-"""Waypoints: waypoints_YYYY-MM-DD.csv with the firmware's 28 columns.
-
-Port of WaypointStore::create/appendWaypoint/appendEvent. A key press creates
-a CREATE row (ID WP00001, WP00002, ... never reused); what the Zero has no
-source for (tyre pressures, suspension, load, photo reference, road type) stays
-empty. Events go to events_YYYY-MM-DD.csv like the firmware's WAYPOINT_CREATED.
-"""
+"""Waypoints: waypoints_YYYY-MM-DD.csv with the firmware's 28 columns."""
 
 import math
 from typing import Dict, Optional
@@ -71,9 +65,15 @@ class WaypointStore:
                 return last["name"], last["source"], last["id"]
         return "", "NONE", ""
 
+    @property
+    def next_waypoint_id(self) -> str:
+        return "WP{:05d}".format(int(self.store.get("wp_next", 1)))
+
     def create(self, snapshot: GpsSnapshot, utc_ms: int, offset_s: int,
                category: str = "GENERIC", road_type: str = "",
-               road_surface: str = "") -> Optional[Dict]:
+               road_surface: str = "",
+               vehicle_setup: Optional[Dict[str, object]] = None,
+               photo_reference: str = "") -> Optional[Dict]:
         """Create a waypoint at the current fix. Needs a valid fix and clock."""
         if not snapshot.fix_valid or utc_ms <= 0:
             return None
@@ -83,6 +83,24 @@ class WaypointStore:
         # but a restart can never reuse an ID that reached the file.
         self.store.put(wp_next=number + 1)
 
+        setup = vehicle_setup or {}
+        road_type = str(setup.get("road_type", road_type) or "")
+        road_surface = str(setup.get("road_surface", road_surface) or "")
+        setup_fields = ("tyre_set_fl_psi", "tyre_set_fr_psi",
+                        "tyre_set_rl_psi", "tyre_set_rr_psi")
+        pressures = {}
+        for field in setup_fields:
+            value = setup.get(field)
+            pressures[field] = (
+                float(value) if isinstance(value, (int, float))
+                and not isinstance(value, bool) and math.isfinite(value)
+                and 0 <= value <= 100 else None)
+        front_pressures = [
+            pressures[field] for field in ("tyre_set_fl_psi", "tyre_set_fr_psi")
+            if pressures[field] is not None]
+        rear_pressures = [
+            pressures[field] for field in ("tyre_set_rl_psi", "tyre_set_rr_psi")
+            if pressures[field] is not None]
         timestamp = format_utc(utc_ms)
         record = {
             "id": waypoint_id, "timestamp": timestamp,
@@ -92,9 +110,16 @@ class WaypointStore:
             "speed": snapshot.speed_kmh if snapshot.speed_fresh else None,
             "heading": snapshot.course_deg if snapshot.course_fresh else None,
             "name": waypoint_id, "source": "USER_WAYPOINT", "note": "",
-            "photo": "", "category": sanitize_text(category, 24) or "GENERIC",
+            "photo": photo_reference, "category": sanitize_text(category, 24) or "GENERIC",
             "revision": 0, "road_type": road_type, "road_surface": road_surface,
         }
+        for field in ("suspension_front", "suspension_rear", "vehicle_load"):
+            record[field] = sanitize_text(str(setup.get(field, "") or ""), 24)
+        record.update(pressures)
+        record["tyre_set_front_psi"] = (
+            sum(front_pressures) / len(front_pressures) if front_pressures else None)
+        record["tyre_set_rear_psi"] = (
+            sum(rear_pressures) / len(rear_pressures) if rear_pressures else None)
         fields = {name: "" for name in WAYPOINT_COLUMNS}
         fields.update({
             "waypoint_id": csv_field(record["id"]),
@@ -107,13 +132,23 @@ class WaypointStore:
             "heading_deg": _num(record["heading"], 2),
             "poi_name": csv_field(record["name"]),
             "poi_source": csv_field(record["source"]),
+            "photo_reference": csv_field(photo_reference),
             "road_type": csv_field(road_type),
+            "tyre_set_front_psi": _num(record["tyre_set_front_psi"], 1),
+            "tyre_set_rear_psi": _num(record["tyre_set_rear_psi"], 1),
+            "suspension_front": csv_field(record["suspension_front"]),
+            "suspension_rear": csv_field(record["suspension_rear"]),
+            "vehicle_load": csv_field(record["vehicle_load"]),
             "telemetry_source": csv_field(self.telemetry_source),
             "category": csv_field(record["category"]),
             "revision": str(record["revision"]),
             "record_action": "CREATE",
             "recorded_at": timestamp,
             "road_surface": csv_field(road_surface),
+            "tyre_set_fl_psi": _num(record["tyre_set_fl_psi"], 1),
+            "tyre_set_fr_psi": _num(record["tyre_set_fr_psi"], 1),
+            "tyre_set_rl_psi": _num(record["tyre_set_rl_psi"], 1),
+            "tyre_set_rr_psi": _num(record["tyre_set_rr_psi"], 1),
         })
         row = ",".join(fields[name] for name in WAYPOINT_COLUMNS)
         date = local_date_text(utc_ms // 1000, offset_s)

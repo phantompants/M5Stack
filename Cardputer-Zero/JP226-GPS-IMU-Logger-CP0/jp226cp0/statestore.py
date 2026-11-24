@@ -40,5 +40,6 @@ class StateStore:
             with open(tmp, "w", encoding="utf-8") as handle:
                 json.dump(self.data, handle, indent=1, sort_keys=True)
             os.replace(tmp, self.path)
+            self.last_error = ""
         except OSError as exc:
             self.last_error = "state file not saved: {}".format(exc)
