@@ -33,6 +33,7 @@ class DinoGame:
         self.start_ms = 0
         self.seed = 0x2545F491
         self.world_width = 160
+        self.character = "TREX"
         self.obstacles: List[Obstacle] = [Obstacle() for _ in range(3)]
 
     def update(self, now_ms: int, speed_kmh: float, world_width: int) -> None:
@@ -94,6 +95,9 @@ class DinoGame:
         changed = self.new_best
         self.new_best = False
         return changed
+
+    def toggle_character(self) -> None:
+        self.character = "BRONTO" if self.character == "TREX" else "TREX"
 
     def status_text(self) -> str:
         if self.state == self.PLAYING:

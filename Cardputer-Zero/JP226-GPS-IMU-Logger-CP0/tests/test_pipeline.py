@@ -10,6 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 
 from jp226cp0 import ui
 from jp226cp0.app import LoggerApp, replay_lines
+from jp226cp0.camera import CameraCapture
 from jp226cp0.clock import Clock
 from jp226cp0.camera import CameraCapture
 from jp226cp0.cli import main as cli_main
@@ -289,7 +290,7 @@ class WaypointTests(unittest.TestCase):
     def test_waypoint_needs_a_fix(self):
         with tempfile.TemporaryDirectory() as tmp:
             app = self.make_app(tmp)
-            self.assertEqual(app.create_waypoint(0), "NO FIX")
+            self.assertEqual(app.create_waypoint(0), "NO FIX / NO CAMERA")
             self.assertFalse([f for f in os.listdir(tmp) if f.startswith("waypoints_")])
 
     def test_waypoint_rows_ids_and_poi(self):
@@ -311,7 +312,7 @@ class WaypointTests(unittest.TestCase):
             self.assertEqual(r["revision"], "0")
             self.assertEqual(r["poi_source"], "USER_WAYPOINT")
             self.assertAlmostEqual(float(r["latitude"]), LAT0, 4)
-            self.assertEqual(r["tyre_set_front_psi"], "")      # not available on the Zero
+            self.assertEqual(r["tyre_set_front_psi"], "36.0")
             self.assertEqual(len(rows[1]), 28)
             self.assertTrue(r["timestamp"].endswith("Z"))
             with open(os.path.join(tmp, "events_2026-10-20.csv")) as handle:
@@ -333,12 +334,6 @@ class WaypointTests(unittest.TestCase):
             camera = FakeCamera(tmp)
             app = LoggerApp(Settings(), tmp, clock=Clock("gps"), camera=camera)
             now = self.feed_fix(app)
-            for selection, changes in (
-                    (0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1),
-                    (6, 1), (7, 2), (8, 3)):
-                app.vehicle_selection = selection
-                for _ in range(changes):
-                    app.adjust_vehicle_setting(1)
             self.assertEqual(app.create_waypoint(now), "WP00001 SAVED")
             app.close()
 
@@ -347,16 +342,16 @@ class WaypointTests(unittest.TestCase):
             self.assertEqual(record["road_type"], "PAVED")
             self.assertEqual(record["road_surface"], "DRY")
             self.assertEqual(record["photo_reference"], "photos/WP00001.jpg")
-            self.assertEqual(record["tyre_set_front_psi"], "30.0")
-            self.assertEqual(record["tyre_set_rear_psi"], "30.0")
-            self.assertEqual(record["tyre_set_fl_psi"], "30.0")
-            self.assertEqual(record["tyre_set_rr_psi"], "30.0")
-            self.assertEqual(record["suspension_front"], "SOFT")
+            self.assertEqual(record["tyre_set_front_psi"], "36.0")
+            self.assertEqual(record["tyre_set_rear_psi"], "45.0")
+            self.assertEqual(record["tyre_set_fl_psi"], "36.0")
+            self.assertEqual(record["tyre_set_rr_psi"], "45.0")
+            self.assertEqual(record["suspension_front"], "NORMAL")
             self.assertEqual(record["suspension_rear"], "NORMAL")
-            self.assertEqual(record["vehicle_load"], "HEAVY")
+            self.assertEqual(record["vehicle_load"], "LIGHT")
             restored = LoggerApp(Settings(), tmp, clock=Clock("gps"))
-            self.assertEqual(restored.vehicle["tyre_set_fl_psi"], 30)
-            self.assertEqual(restored.vehicle["vehicle_load"], "HEAVY")
+            self.assertEqual(restored.vehicle["tyre_set_fl_psi"], 36)
+            self.assertEqual(restored.vehicle["vehicle_load"], "LIGHT")
             restored.close()
 
     def test_camera_failure_does_not_prevent_waypoint_save(self):
@@ -378,6 +373,33 @@ class WaypointTests(unittest.TestCase):
             app.close()
             rows = read_rows(os.path.join(tmp, "waypoints_2026-10-20.csv"))
             self.assertEqual(rows[1][WAYPOINT_COLUMNS.index("photo_reference")], "")
+
+    def test_waypoint_photo_can_be_saved_without_gps_fix(self):
+        class FakeCamera(CameraCapture):
+            @property
+            def available(self):
+                return True
+
+            def capture_waypoint(self, waypoint_id):
+                return "photos/" + waypoint_id + ".jpg"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            camera = FakeCamera(tmp)
+            app = LoggerApp(Settings(), tmp, clock=Clock("system"), camera=camera)
+            self.assertEqual(app.create_waypoint(0), "WP00001 SAVED")
+            self.assertFalse(app.snapshot.fix_valid)
+            self.feed_fix(app)
+            self.assertEqual(app.waypoints.poi_for(app.snapshot),
+                             ("", "NONE", ""))
+            app.close()
+            path = next(os.path.join(tmp, name) for name in os.listdir(tmp)
+                        if name.startswith("waypoints_") and name.endswith(".csv"))
+            rows = read_rows(path)
+            record = dict(zip(rows[0], rows[1]))
+            self.assertEqual(record["category"], "PHOTO")
+            self.assertEqual(record["latitude"], "")
+            self.assertEqual(record["longitude"], "")
+            self.assertEqual(record["photo_reference"], "photos/WP00001.jpg")
 
     def test_ids_continue_after_restart_and_poi_appears_in_telemetry(self):
         with tempfile.TemporaryDirectory() as tmp:

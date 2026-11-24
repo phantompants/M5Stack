@@ -1,4 +1,4 @@
-# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v0.2)
+# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v0.3)
 
 A Python 3 port of the [JP226-GPS-IMU-Logger](https://github.com/phantompants/JP226-GPS-IMU-Logger)
 ESP32 firmware: it logs a vehicle's GPS track to daily CSV files, with the same
@@ -36,10 +36,11 @@ Ported faithfully (same constants, from `include/Config.h`):
 | Rates | 1 Hz moving; stop+15, 30, 45, 60 min then hourly while stopped; 60 s while fix lost; the stop session is persisted (`logger_state.json`) and continued after a restart |
 | Files | `telemetry_YYYY-MM-DD.csv` named by **local** date, the identical 63-column header, UTC `timestamp` + `local_timestamp` with offset, timestamps never go backwards, a file with another header is renamed `-old.csv` |
 | Time zone | offline Australian table from lat/lon (`TimezoneFallback`), same answer 3 checks 30 s apart before it changes, 100 km trust radius around an online lookup (lookup itself is a TODO), POSIX rules evaluated by a built-in engine so no tz database is needed |
-| Waypoints | `W`/Enter saves a waypoint and attempts a camera photo; existing 28-column waypoint schema stores the photo reference and vehicle setup |
+| Waypoints | `W`/Enter saves a waypoint and attempts a camera photo; it can save a photo-only waypoint without a GPS fix |
 | IMU | BMI270 IIO acceleration/gyro feed the unchanged telemetry schema and IMU page |
 | Vehicle setup | On-device presets for road, surface, suspension and load plus per-wheel tyre PSI; saved in `logger_state.json` |
-| Game/version | FOSSIL RECORD shows app/build details; parked Dino Dash uses an articulated-tail, Flexi-Rex-style T. rex that auto-runs above 5 km/h |
+| Game/version | FOSSIL RECORD shows app/build details and dinosaur art; parked Dino Dash uses an articulated-tail T. rex or brontosaurus and auto-runs above 5 km/h |
+| OBD-II | Read-only scanner supports USB, Wi-Fi, Bluetooth Classic and BLE ELM327 adapters, automatic protocol detection and optional full module/DID discovery |
 | Settings | `key=value` file mirrors `logger.cfg` (`timezone`, `timezone_auto`) |
 
 `telemetry_source` remains `LOCAL_GPS`. The 63-column telemetry header is
@@ -63,10 +64,12 @@ or web portal in this base.
   angular-velocity scales. If no BMI270 is present, desktop use falls back to
   the null reader and shows the reason on DIAG when sensor initialization fails.
 - **Camera:** the built-in IMX219 is available at `/dev/video0`; waypoint photos
-  use `rpicam-still` and are stored under `~/telemetry/photos/`. If capture
-  fails, the waypoint is still saved and the error is shown/logged.
-- **Keyboard:** Left/Right and Tab/brackets change pages. On SETUP, Up/Down
-  select a value and A/D adjust it. On DINO DASH, Space/Enter/semicolon jumps.
+  use `rpicam-still` and are stored under `~/telemetry/photos/`. With no GPS fix,
+  the app saves a photo-only waypoint with blank coordinates. If capture fails,
+  a GPS-valid waypoint is still saved and the error is shown/logged.
+- **Keyboard:** Left/Right or Z/C and Tab/brackets change pages. On SETUP and
+  OBD SCAN, Up/Down or F/X select an option; W/E change it. On DINO DASH, B
+  switches between T. rex and brontosaurus; Space/Enter/semicolon jumps.
   `W` or Enter saves a waypoint on other pages; Esc/Q quits.
 - **AtomS3:** the Zero already has a BMI270, so an AtomS3 is not needed for
   local IMU. It could provide ESP-NOW as a radio coprocessor, but that requires
@@ -89,18 +92,28 @@ sudo ./run.sh --headless           # log only, status line every 10 s
 python3 jp226_logger.py --gps-device /dev/ttyAMA0 --gps-baud 115200
 ```
 
-Keys: `Left`/`Right` (or `Tab`/brackets) navigate pages; `w`/`Enter` saves a
-waypoint outside the SETUP and DINO DASH pages; `Esc`/`q` quits. Pages: SPEED,
-GPS, IMU, LOGGER, WAYPOINT, SETUP, DIAG, FOSSIL RECORD, and DINO DASH. The
-SETUP page edits the vehicle profile, saved immediately to app state. A
-waypoint automatically captures a photo when `rpicam-still` is available.
+Keys: `Left`/`Right` or `z`/`c` (also `Tab`/brackets) navigate pages; `f`/`x`
+mirror Up/Down. `w`/`Enter` saves a waypoint except on SETUP, OBD SCAN and DINO
+DASH; `Esc`/`q` quits. Pages: SPEED, GPS, IMU, LOGGER, WAYPOINT, SETUP, OBD
+SCAN, DIAG, FOSSIL RECORD, and DINO DASH. The SETUP page saves vehicle settings
+immediately. A waypoint automatically captures a photo when `rpicam-still` is
+available, including a photo-only waypoint when GPS has no fix.
 
 On SETUP, Up/Down selects ROAD (`PAVED`, `GRAVEL`, `DIRT`, `TRAIL`), SURFACE
 (`DRY`, `DAMP`, `WET`, `VERY WET`), FL/FR/RL/RR tyre PSI, front/rear suspension
-(`SOFT`, `NORMAL`, `FIRM`) or LOAD (`SOLO`, `LIGHT`, `HEAVY`); A/D changes the
-selected value. The first tyre-pressure edit sets it to 30 PSI, then each edit
-changes it by 1 PSI. Dino Dash runs automatically above 5 km/h and becomes
-playable below 3 km/h; Space, Enter or semicolon jumps.
+(`SOFT`, `NORMAL`, `FIRM`) or LOAD (`SOLO`, `LIGHT`, `HEAVY`); W/E (or A/D)
+changes the selected value. Defaults are PAVED, DRY, 36 PSI front, 45 PSI rear,
+NORMAL suspension and LIGHT load. Tire PSI changes by 1. Dino Dash runs
+automatically above 5 km/h and becomes playable below 3 km/h; B toggles the
+T. rex/brontosaurus, and Space, Enter or semicolon jumps.
+
+The OBD SCAN page offers USB, Wi-Fi, Bluetooth Classic and BLE adapters,
+automatic or common ELM327 protocol selection, and a quick standard-PID scan
+or a full read-only module/DID scan. Press Enter to start. Full scans may take
+up to the configured 90-minute budget. Adapter host/address options can be
+set in `~/telemetry/obd_scan.cfg`; copy `obd_scan.cfg.example` from the installed
+app directory to start. The scanner only sends read-only OBD services and
+adapter setup commands; it does not code, clear or write ECU settings.
 
 ## Build an AppStore-compatible package
 
@@ -116,7 +129,7 @@ To publish a built package, clone
 `./czdev login` once, then from that checkout run:
 
 ```bash
-./czdev bump --deb /path/to/jp226-gps-imu-logger-cp0_0.2-1_arm64.deb
+./czdev bump --deb /path/to/jp226-gps-imu-logger-cp0_0.3-1_arm64.deb
 ./czdev publish --deb /path/to/the-version-shown-by-bump_arm64.deb
 ```
 
@@ -163,18 +176,18 @@ password in this repository.
   other hosts without that sensor use `NullImu`.
 - AtomS3 ESP-NOW bridge: not implemented. Grove bus/pin and bridge protocol
   must be verified before adding firmware or claiming support.
-- OBD-II logging: [`jp226cp0/obd.py`](jp226cp0/obd.py), an empty `ObdSource` stub
-  for a future module. Not implemented (but see the scanner below, whose
-  [`elm327.py`](jp226cp0/elm327.py) link it can reuse).
+- OBD-II: the on-device OBD SCAN page and [`jp226cp0/obdscan.py`](jp226cp0/obdscan.py)
+  provide read-only discovery. Live telemetry logging is not implemented.
 - Online time-zone lookup: `LocationTime.lookup_online()` is a documented TODO
   (`note_online_lookup()` and the 100 km trust logic are already in and tested).
 
-## OBD discovery scanner
+## OBD-II scanner
 
-A separate terminal tool that asks the car for everything it will answer and
-logs every request and reply, for finding values such as the Ranger's tyre
-pressures. It is **read-only**: it only sends adapter (AT/ST) commands and
-services 01, 09 and 22, and refuses anything else.
+The OBD SCAN page offers the same read-only scanner from the on-device UI. It
+asks the vehicle what it supports, then logs each request and response. The
+standalone CLI remains available for more detailed configuration. The scanner
+only sends adapter (AT/ST) commands and diagnostic read services 01, 09 and 22;
+it refuses ECU coding, clearing, and other write commands.
 
 ```bash
 cp obd_scan.cfg.example obd_scan.cfg          # pick the link and ranges
@@ -185,11 +198,13 @@ python3 -m jp226cp0.obdscan --demo            # pretend car, no adapter
 
 Links: `usb` (vLinker USB; most reliable here), `wifi` (join the adapter's
 network first), `bt` (Bluetooth Classic, paired with `bluetoothctl`) and `ble`
-(needs `python3-bleak`; untested). Steps: adapter details, the standard PIDs
-and Mode 09 (VIN, calibration IDs), every module address in 700-7F7, then a
-Mode 22 DID sweep of each module found, within a time budget. The default
-ranges take about 20-40 minutes; `did_ranges = everything` tries all 65,536
-DIDs per module and takes hours. Ignition on, engine running is best.
+(needs `python3-bleak`). Protocol 0 lets ELM327 auto-detect across common OBD-II
+protocols; protocols 1-9 and A can be selected explicitly. The UI quick scan
+reads adapter details and standard PIDs/Mode 09. The optional full read-only
+scan also checks module addresses 700-7F7 and Mode 22 DIDs, within a configured
+time budget (90 minutes by default). `did_ranges = everything` tries all
+65,536 DIDs per module and can take many hours. Ignition on; engine running is
+best. A vehicle or adapter may not support every protocol or PID.
 
 The log is `obd_scans/obd_scan_<UTC time>.jsonl`: one line per request (raw
 reply lines, and each module's reply decoded as positive, refusal with its
@@ -212,8 +227,8 @@ The store rejects placeholders; these are deliberately still placeholders:
 4. `packaging/icon.png` is a generated placeholder pin icon (valid 256x256, but not designed).
 5. Confirm the package maintainer/contact field in `packaging/meta.env` is the contact you want displayed in package metadata.
 6. The store requires a short video of the app running on a **real device** for a first release.
-7. `permissions` is `additional_hardware: true` only. Set `imu: true` once an IMU reader exists,
-   `background_service: true` if it is ever run as a service, `network: true` if the online lookup is added.
+7. Review `permissions` in `app-builder.json` when adding any additional
+   hardware or network behavior.
 
 ## Next-week test checklist
 
@@ -228,9 +243,12 @@ The store rejects placeholders; these are deliberately still placeholders:
 9. Drive a short loop, press the waypoint key at a known place; check `waypoints_*.csv`.
 10. Unplug the GPS: `FIX_LOST` after 10 s, a row a minute, recovery when it returns.
 11. Confirm RTC/system clock behaviour (assumption 6) and that no time ever goes backwards in the CSV.
-12. Identify the IMU chip/bus; write an `ImuReader`.
-13. Build and install the `.deb` through AppBuilder; check APPLaunch launches it and as which user.
-14. Replace the placeholders above, capture real screenshots and the demo video.
+12. Check BMI270 values on the IMU page, test camera capture both with and without GPS fix,
+    and verify photo references and coordinates in waypoint rows.
+13. Test the OBD SCAN page with a supported adapter, automatic protocol selection,
+    and both quick and full read-only scans.
+14. Build and install the `.deb` through AppBuilder; check APPLaunch launches it and as which user.
+15. Replace the placeholders above, capture real screenshots and the demo video.
 
 ## Layout
 

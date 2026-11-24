@@ -16,11 +16,11 @@ FIELD_LABELS: Tuple[Tuple[str, str], ...] = (
 )
 
 CHOICES = {
-    "road_type": ("", "PAVED", "GRAVEL", "DIRT", "TRAIL"),
-    "road_surface": ("", "DRY", "DAMP", "WET", "VERY WET"),
-    "suspension_front": ("", "SOFT", "NORMAL", "FIRM"),
-    "suspension_rear": ("", "SOFT", "NORMAL", "FIRM"),
-    "vehicle_load": ("", "SOLO", "LIGHT", "HEAVY"),
+    "road_type": ("PAVED", "GRAVEL", "DIRT", "TRAIL"),
+    "road_surface": ("DRY", "DAMP", "WET", "VERY WET"),
+    "suspension_front": ("SOFT", "NORMAL", "FIRM"),
+    "suspension_rear": ("SOFT", "NORMAL", "FIRM"),
+    "vehicle_load": ("SOLO", "LIGHT", "HEAVY"),
 }
 TYRE_FIELDS = frozenset(
     ("tyre_set_fl_psi", "tyre_set_fr_psi", "tyre_set_rl_psi", "tyre_set_rr_psi")
@@ -29,15 +29,15 @@ TYRE_FIELDS = frozenset(
 
 def defaults() -> Dict[str, object]:
     return {
-        "road_type": "",
-        "road_surface": "",
-        "tyre_set_fl_psi": None,
-        "tyre_set_fr_psi": None,
-        "tyre_set_rl_psi": None,
-        "tyre_set_rr_psi": None,
-        "suspension_front": "",
-        "suspension_rear": "",
-        "vehicle_load": "",
+        "road_type": "PAVED",
+        "road_surface": "DRY",
+        "tyre_set_fl_psi": 36,
+        "tyre_set_fr_psi": 36,
+        "tyre_set_rl_psi": 45,
+        "tyre_set_rr_psi": 45,
+        "suspension_front": "NORMAL",
+        "suspension_rear": "NORMAL",
+        "vehicle_load": "LIGHT",
     }
 
 
@@ -63,7 +63,7 @@ def adjust(values: Dict[str, object], field: str, delta: int) -> bool:
         try:
             index = options.index(values[field])
         except ValueError:
-            index = 0
+            index = -1 if delta > 0 else 0
         values[field] = options[(index + delta) % len(options)]
         return True
     if field in TYRE_FIELDS:

@@ -32,6 +32,7 @@ import datetime
 import json
 import os
 import sys
+import threading
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -49,7 +50,7 @@ DEFAULTS = {
     "bt_address": "",        # bt (Classic): pair first with bluetoothctl
     "bt_channel": "1",
     "ble_name": "",          # ble: name or address; blank = first OBD-ish name
-    "protocol": "6",         # 6 = CAN 11-bit 500k (Ranger); 0 = automatic
+    "protocol": "0",         # automatic for broad vehicle compatibility
     "steps": "adapter,standard,modules,dids",
     "modules": "700-7F7",
     "did_ranges": "F100-F1FF,DD00-DDFF,2800-28FF,4000-40FF",
@@ -57,6 +58,21 @@ DEFAULTS = {
     "per_module_minutes": "10",
     "total_minutes": "90",
     "out_dir": "",
+}
+
+LINK_CHOICES = ("usb", "wifi", "bt", "ble")
+PROTOCOL_LABELS = {
+    "0": "AUTO",
+    "1": "J1850 PWM",
+    "2": "J1850 VPW",
+    "3": "ISO 9141-2",
+    "4": "KWP 5-BAUD",
+    "5": "KWP FAST",
+    "6": "CAN 11/500",
+    "7": "CAN 29/500",
+    "8": "CAN 11/250",
+    "9": "CAN 29/250",
+    "A": "J1939 29/250",
 }
 
 # A "find everything" preset: every DID on every module. Many hours.
@@ -123,12 +139,14 @@ def _ascii(hex_text: str) -> str:
 class Scanner:
     def __init__(self, elm: Elm327, log: ScanLog, cfg: Dict[str, str],
                  clock: Callable[[], float] = time.monotonic,
-                 progress: Callable[[str], None] = lambda s: None):
+                 progress: Callable[[str], None] = lambda s: None,
+                 cancel_event: Optional[threading.Event] = None):
         self.elm = elm
         self.log = log
         self.cfg = cfg
         self.clock = clock
         self.progress = progress
+        self.cancel_event = cancel_event
         self.header = None
         self.deadline = clock() + float(cfg["total_minutes"]) * 60
         self.summary: Dict[str, object] = {"modules": {}, "pids": [], "mode09": {},
@@ -165,7 +183,8 @@ class Scanner:
         return result
 
     def out_of_time(self) -> bool:
-        return self.clock() >= self.deadline
+        return (self.clock() >= self.deadline or
+                (self.cancel_event is not None and self.cancel_event.is_set()))
 
     # --------------------------------------------------------------- steps
     def step_adapter(self) -> None:
@@ -200,6 +219,8 @@ class Scanner:
         self.summary["pids"] = ["{:02X}".format(p) for p in supported if p % 0x20]
         self.progress("mode 09")
         for pid in (0x00, 0x02, 0x04, 0x06, 0x08, 0x0A):
+            if self.out_of_time():
+                break
             r = self.request(0x7DF, bytes([0x09, pid]), "mode09", 4.0)
             for header, reply in r["replies"].items():
                 if reply["kind"] == "positive" and pid in (0x02, 0x04, 0x0A):
@@ -279,6 +300,8 @@ class Scanner:
             if not modules:  # dids without discovery: the engine and body modules
                 modules = [0x7E0, 0x726]
             self.step_dids(modules)
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            self.summary["cancelled"] = True
         self.summary["out_of_time"] = self.out_of_time()
         self.log.write({"step": "summary", **self.summary})
         return self.summary

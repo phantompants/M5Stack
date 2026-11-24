@@ -5,9 +5,10 @@ from typing import Dict, Optional
 
 from . import APP_TITLE, hardware
 
-PAGES = ("SPEED", "GPS", "IMU", "LOGGER", "WAYPOINT", "SETUP", "DIAG",
-         "FOSSIL RECORD", "DINO DASH")
+PAGES = ("SPEED", "GPS", "IMU", "LOGGER", "WAYPOINT", "SETUP", "OBD SCAN",
+         "DIAG", "FOSSIL RECORD", "DINO DASH")
 SETTINGS_PAGE_INDEX = PAGES.index("SETUP")
+OBD_PAGE_INDEX = PAGES.index("OBD SCAN")
 DINO_PAGE_INDEX = PAGES.index("DINO DASH")
 
 _BG = (8, 10, 16)
@@ -64,9 +65,9 @@ def _load_font(size: int, bold: bool):
 class _Fonts:
     def __init__(self):
         self.huge = _load_font(70, True)
-        self.big = _load_font(20, True)
-        self.row = _load_font(14, True)
-        self.small = _load_font(12, False)
+        self.big = _load_font(24, True)
+        self.row = _load_font(16, True)
+        self.small = _load_font(14, False)
 
 
 _fonts: Optional[_Fonts] = None
@@ -118,6 +119,19 @@ def _rows(draw, f, rows, top=28, step=21):
         _text(draw, 84, y, value, f.row, colour)
 
 
+def _two_columns(draw, f, rows, top=34, step=35):
+    for row_index, (left, right) in enumerate(rows):
+        y = top + row_index * step
+        for column, item in enumerate((left, right)):
+            if item is None:
+                continue
+            label, value, colour = item
+            x0 = 8 if column == 0 else 166
+            x1 = 154 if column == 0 else 312
+            _text(draw, x0, y + 2, label, f.small, _DIM)
+            _text(draw, x1, y, value, f.row, colour, "r")
+
+
 def _page_speed(draw, f, m, w, h):
     speed = m["speed_kmh"]
     if m["fix_valid"] and speed is not None:
@@ -130,37 +144,36 @@ def _page_speed(draw, f, m, w, h):
     fix = "FIX" if m["fix_valid"] else "NO FIX"
     _text(draw, 8, 130, "{}  SAT {}  HDOP {}".format(fix, sats, hdop), f.row,
           _GOOD if m["fix_valid"] else _BAD)
-    _text(draw, 8, 148, m["local_text"] or "no time yet", f.small, _DIM)
-    _text(draw, w - 8, 148, m["zone_name"], f.small, _DIM, "r")
+    _text(draw, 8, 145, m["local_text"] or "no time yet", f.small, _DIM)
+    _text(draw, w - 8, 145, m["zone_name"], f.small, _DIM, "r")
 
 
 def _page_gps(draw, f, m, w, h):
     fix_ok = m["fix_valid"]
-    _rows(draw, f, [
-        ("FIX", "VALID" if fix_ok else "NO FIX", _GOOD if fix_ok else _BAD),
-        ("SATS/HDOP", "{} / {}   VDOP {}".format(
-            _fmt(m["satellites"], "d"), _fmt(m["hdop"], ".2f"),
-            _fmt(m["vdop"], ".2f")), _TEXT),
-        ("LAT", _fmt(m["lat"], ".6f"), _TEXT),
-        ("LON", _fmt(m["lon"], ".6f"), _TEXT),
-        ("ALT / HDG", "{} m   {} deg".format(_fmt(m["alt"], ".0f"),
-                                              _fmt(m["heading"], ".0f")), _TEXT),
-        ("UTC", m["utc_text"] or "--", _DIM),
-    ])
+    _two_columns(draw, f, [
+        (("FIX", "VALID" if fix_ok else "NO FIX", _GOOD if fix_ok else _BAD),
+         ("SATS", _fmt(m["satellites"], "d"), _TEXT)),
+        (("LAT", _fmt(m["lat"], ".5f"), _TEXT),
+         ("LON", _fmt(m["lon"], ".5f"), _TEXT)),
+        (("ALT", "{} m".format(_fmt(m["alt"], ".0f")), _TEXT),
+         ("HEADING", "{} deg".format(_fmt(m["heading"], ".0f")), _TEXT)),
+        (("HDOP", _fmt(m["hdop"], ".2f"), _TEXT),
+         ("VDOP", _fmt(m["vdop"], ".2f"), _TEXT)),
+        (("UTC", m["utc_text"] or "--", _DIM), None),
+    ], top=35, step=24)
 
 
 def _page_logger(draw, f, m, w, h):
     state = m["log_state"]
     err = m["storage_error"]
-    _rows(draw, f, [
-        ("STATE", state, _STATE_COLOURS.get(state, _DIM)),
-        ("FILE", m["file_name"] or "--", _TEXT),
-        ("ROWS", str(m["rows_written"]), _TEXT),
-        ("NEXT", m["next_due"] or "--", _TEXT),
-        ("ZONE", "{} ({})".format(m["zone_name"].replace("Australia/", ""),
-                                  m["zone_source"]), _TEXT),
-        ("STORAGE", "ERROR" if err else "OK", _BAD if err else _GOOD),
-    ])
+    _two_columns(draw, f, [
+        (("STATE", state, _STATE_COLOURS.get(state, _DIM)),
+         ("ROWS", str(m["rows_written"]), _TEXT)),
+        (("NEXT", m["next_due"] or "--", _TEXT),
+         ("STORAGE", "ERROR" if err else "OK", _BAD if err else _GOOD)),
+        (("FILE", m["file_name"] or "--", _TEXT),
+         ("ZONE", m["zone_name"].replace("Australia/", ""), _TEXT)),
+    ], top=40, step=34)
 
 
 def _page_imu(draw, f, m, w, h):
@@ -170,16 +183,19 @@ def _page_imu(draw, f, m, w, h):
         _text(draw, w // 2, 58, message[:34], f.row, _WARN, "c")
         _text(draw, w // 2, 82, m["imu"], f.small, _DIM, "c")
         return
-    _rows(draw, f, [
-        ("ACC m/s2", "{:.2f}  {:.2f}  {:.2f}".format(
-            sample.ax_mps2, sample.ay_mps2, sample.az_mps2), _TEXT),
-        ("GYRO dps", "{:.1f}  {:.1f}  {:.1f}".format(
-            sample.gx_dps, sample.gy_dps, sample.gz_dps), _TEXT),
-        ("PITCH/ROLL", "{:.1f} / {:.1f} deg".format(
-            sample.pitch_deg, sample.roll_deg), _TEXT),
-        ("VIB RMS", "{:.3f} m/s2".format(sample.vibration_rms_mps2), _TEXT),
-        ("SAMPLES", str(sample.sample_count), _DIM),
-    ])
+    axes = (_ACCENT, _GOOD, _WARN)
+    _two_columns(draw, f, [
+        (("ACC X", "{:.2f}".format(sample.ax_mps2), axes[0]),
+         ("ACC Y", "{:.2f}".format(sample.ay_mps2), axes[1])),
+        (("ACC Z", "{:.2f}".format(sample.az_mps2), axes[2]),
+         ("GYRO X", "{:.1f}".format(sample.gx_dps), axes[0])),
+        (("GYRO Y", "{:.1f}".format(sample.gy_dps), axes[1]),
+         ("GYRO Z", "{:.1f}".format(sample.gz_dps), axes[2])),
+        (("PITCH", "{:.1f} deg".format(sample.pitch_deg), _TEXT),
+         ("ROLL", "{:.1f} deg".format(sample.roll_deg), _TEXT)),
+        (("VIB RMS", "{:.3f}".format(sample.vibration_rms_mps2), _TEXT),
+         ("SAMPLES", str(sample.sample_count), _DIM)),
+    ], top=35, step=24)
 
 
 def _page_waypoint(draw, f, m, w, h):
@@ -193,48 +209,72 @@ def _page_waypoint(draw, f, m, w, h):
             ("LAST", last["id"], _TEXT),
             ("LAT", _fmt(last["lat"], ".6f"), _TEXT),
             ("LON", _fmt(last["lon"], ".6f"), _TEXT),
-            ("PHOTO", os.path.basename(last.get("photo", "")) or m["camera_message"] or "--",
+            ("PHOTO", last.get("photo", "").split("/")[-1] or
+             m["camera_message"] or "--",
              _TEXT),
             ("ROAD", last.get("road_type") or "--", _TEXT),
-        ], top=76, step=18)
+        ], top=76, step=16)
     else:
         _text(draw, w // 2, 100, "no waypoint yet", f.row, _DIM, "c")
 
 
 def _page_setup(draw, f, m, w, h):
-    _text(draw, 8, 24, "UP/DOWN select   A/D edit", f.small, _DIM)
-    for i, (label, value) in enumerate(m["vehicle_settings"]):
-        y = 42 + i * 12
-        selected = i == m["vehicle_selection"]
+    _text(draw, 8, 24, "F/X select   W/E change", f.small, _DIM)
+    for index, (label, value) in enumerate(m["vehicle_settings"]):
+        column, row = divmod(index, 5)
+        x0 = 8 if column == 0 else 166
+        x1 = 154 if column == 0 else 312
+        y = 43 + row * 20
+        selected = index == m["vehicle_selection"]
         if selected:
-            draw.rectangle([4, y - 1, w - 4, y + 11], fill=_PANEL)
+            draw.rectangle([x0 - 4, y - 1, x1, y + 18], fill=_PANEL)
+        colour = _ACCENT if selected else _TEXT
+        _text(draw, x0, y, label, f.small, colour)
+        _text(draw, x1 - 4, y, value, f.row, colour, "r")
+    _text(draw, w // 2, 145, "Arrows: pages   saved automatically",
+          f.small, _DIM, "c")
+
+
+def _page_obd(draw, f, m, w, h):
+    _text(draw, 8, 24, "F/X select  W/E change  ENTER scan", f.small, _DIM)
+    for index, (label, value) in enumerate(m["obd_settings"]):
+        y = 40 + index * 20
+        selected = index == m["obd_selection"]
+        if selected:
+            draw.rectangle([4, y - 1, w - 4, y + 20], fill=_PANEL)
         colour = _ACCENT if selected else _TEXT
         _text(draw, 10, y, label, f.small, colour)
-        _text(draw, w - 10, y, value, f.small, colour, "r")
-    _text(draw, w // 2, 154, "Saved automatically   W=done", f.small, _DIM, "c")
+        _text(draw, w - 10, y, value, f.row, colour, "r")
+    status_colour = (_GOOD if m["obd_scan_status"] == "COMPLETE" else
+                     _BAD if "ERROR" in m["obd_scan_status"] else _WARN)
+    _text(draw, 8, 108, m["obd_scan_status"], f.row, status_colour)
+    _text(draw, 8, 130, m["obd_scan_summary"] or
+          m["obd_scan_progress"] or "Read-only OBD-II; no ECU writes",
+          f.small, _TEXT)
+    _text(draw, 8, 146, "Config: " + m["obd_config_path"][-34:], f.small, _DIM)
 
 
 def _page_diag(draw, f, m, w, h):
     counts = m["sentence_counts"]
     seen = " ".join("{}{}".format(k, counts[k]) for k in
                     ("GGA", "RMC", "GSA", "VTG") if k in counts) or "none"
-    _rows(draw, f, [
-        ("GPS PORT", "{} @ {}".format(os.path.basename(m["gps_device"]) or "--",
-                                      m["gps_baud"] or "--"), _TEXT),
-        ("STATUS", m["gps_status"] or "--", _TEXT),
-        ("NMEA", "ok {}  bad {}".format(m["sentences_ok"], m["sentences_bad"]), _TEXT),
-        ("SEEN", seen, _DIM),
-        ("LAST KEY", m["last_key"] or "--", _TEXT),
-        ("IMU/CLK", "{} / {}{}".format(m["imu"], m["clock_source"],
-                                       " (gps ok)" if m["clock_gps_synced"] else ""),
-         _TEXT),
-        ("CAMERA", m["camera_message"] or
-         ("READY" if m["camera_available"] else "NOT FOUND"), _TEXT),
-    ], step=17)
+    _two_columns(draw, f, [
+        (("GPS PORT", "{} @ {}".format(os.path.basename(m["gps_device"]) or "--",
+                                       m["gps_baud"] or "--"), _TEXT),
+         ("NMEA OK", str(m["sentences_ok"]), _TEXT)),
+        (("STATUS", m["gps_status"] or "--", _TEXT),
+         ("NMEA BAD", str(m["sentences_bad"]), _TEXT)),
+        (("SEEN", seen, _DIM), ("LAST KEY", m["last_key"] or "--", _TEXT)),
+        (("IMU", m["imu"], _TEXT),
+         ("CAMERA", "READY" if m["camera_available"] else "NOT FOUND", _TEXT)),
+        (("CLOCK", "{}{}".format(m["clock_source"],
+                                  " GPS" if m["clock_gps_synced"] else ""), _TEXT),
+         ("OBD", m["obd_scan_status"], _TEXT)),
+    ], top=32, step=23)
     if m["imu_error"]:
-        _text(draw, 8, 150, m["imu_error"][:44], f.small, _WARN)
+        _text(draw, 8, 145, m["imu_error"][:44], f.small, _WARN)
     else:
-        _text(draw, 8, 150, "v{}  {}".format(m["version"], m["data_dir"][-30:]),
+        _text(draw, 8, 145, "v{}  {}".format(m["version"], m["data_dir"][-30:]),
               f.small, _DIM)
 
 
@@ -246,8 +286,11 @@ def _page_fossil(draw, f, m, w, h):
     _text(draw, 106, 70, m["build_git_hash"], f.row, _TEXT)
     _text(draw, 8, 93, "DATE", f.small, _DIM)
     _text(draw, 106, 91, m["build_date"], f.row, _TEXT)
-    _text(draw, w // 2, 124, m["fossil_joke"], f.small, _WARN, "c")
-    _text(draw, w - 8, 148, "Python port", f.small, _DIM, "r")
+    _draw_sprite(draw, 14, 111, 2, (m["now_ms"] // 150) % 2, "BRONTO")
+    _draw_sprite(draw, 244, 111, 2, (m["now_ms"] // 150) % 2, "TREX")
+    _text(draw, 64, 145, "BRONTO", f.small, _GOOD, "c")
+    _text(draw, 292, 145, "T-REX", f.small, _WARN, "c")
+    _text(draw, w // 2, 121, m["fossil_joke"], f.small, _ACCENT, "c")
 
 
 _DINO_FRAMES = (
@@ -272,6 +315,28 @@ _DINO_FRAMES = (
         ".....GGGG..GGGG.........", "........................",
     ),
 )
+_BRONTO_FRAMES = (
+    (
+        "..................GGGG..", ".................GGGWKG.",
+        ".................GGGGGGG", ".................GGG....",
+        "................GGG.....", "...............GGG......",
+        ".......D.D.D..GGG.......", ".....GGGGGGGGGGGG.......",
+        "...GGGDGGGGDGGGGG.......", "..GGGGGGGGGGGGGGG.......",
+        ".GG.GGGGGGGGGGGGG.......", "GG...GGGGGGGGGGG........",
+        ".....GG..GG..GG..GG.....", ".....GG..GG..GG..GG.....",
+        "....GGG.GGG.GGG.GGG.....", "........................",
+    ),
+    (
+        "..................GGGG..", ".................GGGWKG.",
+        ".................GGGGGGG", ".................GGG....",
+        "................GGG.....", "...............GGG......",
+        ".......D.D.D..GGG.......", ".....GGGGGGGGGGGG.......",
+        "...GGGDGGGGDGGGGG.......", "..GGGGGGGGGGGGGGG.......",
+        ".GG.GGGGGGGGGGGGG.......", "GG...GGGGGGGGGGG........",
+        "......GG.GG....GG.GG....", "......GG.GG....GG.GG....",
+        ".....GGGGGG...GGGGGG....", "........................",
+    ),
+)
 _DINO_COLOURS = {
     "G": (60, 180, 75), "D": (30, 110, 40),
     "J": (150, 210, 115), "W": (255, 255, 255), "K": (0, 0, 0),
@@ -284,8 +349,9 @@ _JOKES = (
 )
 
 
-def _draw_dino(draw, x, y, scale, frame):
-    rows = _DINO_FRAMES[frame % len(_DINO_FRAMES)]
+def _draw_sprite(draw, x, y, scale, frame, character):
+    rows = (_BRONTO_FRAMES if character == "BRONTO" else _DINO_FRAMES)
+    rows = rows[frame % len(rows)]
     for row, line in enumerate(rows):
         for col, pixel in enumerate(line):
             colour = _DINO_COLOURS.get(pixel)
@@ -299,7 +365,7 @@ def _page_dino(draw, f, m, w, h):
     scale = 2
     left = 4
     play_width = w - 8
-    ground_y = 126
+    ground_y = 116
     now_ms = m["now_ms"]
     _text(draw, w // 2, 25, m["dino_status"] or
           ("AUTORUN  >5 KM/H" if m["dino_moving"] else "PARKED: PRESS SPACE"),
@@ -307,8 +373,8 @@ def _page_dino(draw, f, m, w, h):
     if m["dino_moving"]:
         span = play_width + 24 * scale
         x = left + int((now_ms // 25) % span) - 24 * scale
-        _draw_dino(draw, x, ground_y - 16 * scale, scale,
-                   (now_ms // 150) % 2)
+        _draw_sprite(draw, x, ground_y - 16 * scale, scale,
+                     (now_ms // 150) % 2, m["dino_character"])
         for gx in range(left - int((now_ms // 25) % (4 * scale)),
                         left + play_width, 4 * scale):
             draw.line([gx, ground_y, gx + 2 * scale, ground_y],
@@ -339,18 +405,19 @@ def _page_dino(draw, f, m, w, h):
                     [x, ground_y - height, x + width - 1, ground_y - 1],
                     radius=scale, fill=(132, 132, 132))
         y = ground_y - 16 * scale - int(m["dino_y"] * scale)
-        _draw_dino(draw, left + 4 * scale, y, scale,
-                   (now_ms // 150) % 2 if m["dino_state"] == "PLAYING" else 0)
-    hint = "AUTORUN WHILE MOVING" if m["dino_moving"] else \
-        "SPACE / ENTER / ;  JUMP"
-    _text(draw, w // 2, 134, hint, f.small, _DIM, "c")
-    _text(draw, w // 2, 150, "Brought to you by JP226Prints", f.small,
+        _draw_sprite(draw, left + 4 * scale, y, scale,
+                     (now_ms // 150) % 2 if m["dino_state"] == "PLAYING" else 0,
+                     m["dino_character"])
+    hint = ("B: T-REX / BRONTO" if m["dino_moving"] else
+            "B: CHANGE DINO   SPACE: JUMP")
+    _text(draw, w // 2, 120, hint, f.small, _DIM, "c")
+    _text(draw, w // 2, 142, "Brought to you by JP226Prints", f.small,
           _ACCENT, "c")
 
 
 _PAGE_FUNCS = (
     _page_speed, _page_gps, _page_imu, _page_logger, _page_waypoint,
-    _page_setup, _page_diag, _page_fossil, _page_dino,
+    _page_setup, _page_obd, _page_diag, _page_fossil, _page_dino,
 )
 
 

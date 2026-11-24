@@ -51,7 +51,8 @@ class WaypointStore:
     def distance_from_last_m(self, latitude: float,
                              longitude: float) -> Optional[float]:
         last = self.last
-        if last is None:
+        if (last is None or not isinstance(last.get("lat"), (int, float))
+                or not isinstance(last.get("lon"), (int, float))):
             return None
         return distance_km(last["lat"], last["lon"], latitude, longitude) * 1000.0
 
@@ -73,9 +74,10 @@ class WaypointStore:
                category: str = "GENERIC", road_type: str = "",
                road_surface: str = "",
                vehicle_setup: Optional[Dict[str, object]] = None,
-               photo_reference: str = "") -> Optional[Dict]:
-        """Create a waypoint at the current fix. Needs a valid fix and clock."""
-        if not snapshot.fix_valid or utc_ms <= 0:
+               photo_reference: str = "",
+               allow_no_fix: bool = False) -> Optional[Dict]:
+        """Create a waypoint with a GPS fix, or a photo-only record if allowed."""
+        if utc_ms <= 0 or (not snapshot.fix_valid and not allow_no_fix):
             return None
         number = int(self.store.get("wp_next", 1))
         waypoint_id = "WP{:05d}".format(number)
@@ -104,11 +106,12 @@ class WaypointStore:
         timestamp = format_utc(utc_ms)
         record = {
             "id": waypoint_id, "timestamp": timestamp,
-            "lat": snapshot.latitude, "lon": snapshot.longitude,
-            "alt": snapshot.altitude_m if snapshot.altitude_fresh else None,
-            "hdop": snapshot.hdop if snapshot.hdop_valid else None,
-            "speed": snapshot.speed_kmh if snapshot.speed_fresh else None,
-            "heading": snapshot.course_deg if snapshot.course_fresh else None,
+            "lat": snapshot.latitude if snapshot.fix_valid else None,
+            "lon": snapshot.longitude if snapshot.fix_valid else None,
+            "alt": snapshot.altitude_m if snapshot.fix_valid and snapshot.altitude_fresh else None,
+            "hdop": snapshot.hdop if snapshot.fix_valid and snapshot.hdop_valid else None,
+            "speed": snapshot.speed_kmh if snapshot.fix_valid and snapshot.speed_fresh else None,
+            "heading": snapshot.course_deg if snapshot.fix_valid and snapshot.course_fresh else None,
             "name": waypoint_id, "source": "USER_WAYPOINT", "note": "",
             "photo": photo_reference, "category": sanitize_text(category, 24) or "GENERIC",
             "revision": 0, "road_type": road_type, "road_surface": road_surface,

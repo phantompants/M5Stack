@@ -41,6 +41,8 @@ class EvdevKeys:
                 supported = (
                     ecodes.KEY_ESC, ecodes.KEY_Q, ecodes.KEY_LEFT,
                     ecodes.KEY_RIGHT, ecodes.KEY_W, ecodes.KEY_ENTER,
+                    ecodes.KEY_F, ecodes.KEY_Z, ecodes.KEY_X, ecodes.KEY_C,
+                    ecodes.KEY_E, ecodes.KEY_B, ecodes.KEY_UP, ecodes.KEY_DOWN,
                 )
                 if any(code in caps for code in supported):
                     self.devices.append(dev)

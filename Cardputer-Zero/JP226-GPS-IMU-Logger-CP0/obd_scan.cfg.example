@@ -20,8 +20,8 @@ bt_channel = 1
 # ble (vLinker FS/MS, Vgate BLE): a name part or address; blank = first OBD-ish name
 ble_name =
 
-# 6 = CAN 11-bit 500k (Ford Ranger); 0 = let the adapter work it out
-protocol = 6
+# 0 = automatic (recommended for broad vehicle compatibility); 6 = CAN 11-bit 500k
+protocol = 0
 
 steps = adapter,standard,modules,dids
 

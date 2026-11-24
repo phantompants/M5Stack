@@ -6,7 +6,12 @@ from unittest import mock
 
 from jp226cp0.camera import CameraCapture
 from jp226cp0.dino import DinoGame
+from jp226cp0.app import LoggerApp
+from jp226cp0.clock import Clock
+from jp226cp0.fake_elm import FakeElm
 from jp226cp0.imu import Bmi270IioReader, NullImu, create_default_imu
+from jp226cp0.obdscan import PROTOCOL_LABELS
+from jp226cp0.settings import Settings
 from jp226cp0.vehicle import adjust, defaults, load
 from jp226cp0 import ui
 
@@ -56,16 +61,26 @@ class Bmi270Tests(unittest.TestCase):
 
 
 class VehicleSetupTests(unittest.TestCase):
+    def test_requested_vehicle_defaults(self):
+        setup = defaults()
+        self.assertEqual(
+            (setup["road_type"], setup["road_surface"],
+             setup["tyre_set_fl_psi"], setup["tyre_set_fr_psi"],
+             setup["tyre_set_rl_psi"], setup["tyre_set_rr_psi"],
+             setup["suspension_front"], setup["suspension_rear"],
+             setup["vehicle_load"]),
+            ("PAVED", "DRY", 36, 36, 45, 45, "NORMAL", "NORMAL", "LIGHT"))
+
     def test_load_discards_invalid_values_and_settings_cycle(self):
         setup = load({"road_type": "INVALID", "tyre_set_fl_psi": 31,
                       "tyre_set_fr_psi": True})
-        self.assertEqual(setup["road_type"], "")
-        self.assertEqual(setup["tyre_set_fl_psi"], 31)
-        self.assertIsNone(setup["tyre_set_fr_psi"])
-        self.assertTrue(adjust(setup, "road_type", 1))
         self.assertEqual(setup["road_type"], "PAVED")
+        self.assertEqual(setup["tyre_set_fl_psi"], 31)
+        self.assertEqual(setup["tyre_set_fr_psi"], 36)
+        self.assertTrue(adjust(setup, "road_type", 1))
+        self.assertEqual(setup["road_type"], "GRAVEL")
         self.assertTrue(adjust(setup, "tyre_set_fr_psi", 1))
-        self.assertEqual(setup["tyre_set_fr_psi"], 30)
+        self.assertEqual(setup["tyre_set_fr_psi"], 37)
 
 
 class CameraTests(unittest.TestCase):
@@ -111,6 +126,37 @@ class DinoTests(unittest.TestCase):
             self.assertEqual(len(frame), 16)
             self.assertTrue(all(len(row) == 24 for row in frame))
         self.assertIn("J", "".join(ui._DINO_FRAMES[0]))
+        self.assertTrue(all(
+            len(frame) == 16 and all(len(row) == 24 for row in frame)
+            for frame in ui._BRONTO_FRAMES))
+        game = DinoGame()
+        game.toggle_character()
+        self.assertEqual(game.character, "BRONTO")
+        game.toggle_character()
+        self.assertEqual(game.character, "TREX")
+
+
+class ObdUiTests(unittest.TestCase):
+    def test_adapter_options_and_read_only_scan_run_in_background(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = LoggerApp(Settings(), tmp, clock=Clock("gps"))
+            app.obd_selection = 0
+            app.adjust_obd_option(1)
+            self.assertEqual(app.obd_link, "wifi")
+            app.obd_selection = 1
+            app.adjust_obd_option(1)
+            self.assertIn(app.obd_protocol, PROTOCOL_LABELS)
+
+            app.obd_link = "usb"
+            app.obd_protocol = "0"
+            with mock.patch("jp226cp0.obdscan.open_link",
+                            return_value=FakeElm()):
+                app.start_obd_scan()
+                app._obd_thread.join(timeout=10)
+            self.assertEqual(app.obd_scan_status, "COMPLETE")
+            self.assertIn("Protocol 6", app.obd_scan_summary)
+            self.assertTrue(os.path.isdir(os.path.join(tmp, "obd_scans")))
+            app.close()
 
 
 if __name__ == "__main__":

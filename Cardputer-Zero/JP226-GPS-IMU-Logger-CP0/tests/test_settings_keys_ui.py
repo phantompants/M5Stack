@@ -92,6 +92,8 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(keys.action_for("KEY_RIGHT"), keys.NEXT_PAGE)
         self.assertEqual(keys.action_for("KEY_LEFTBRACE"), keys.PREV_PAGE)
         self.assertEqual(keys.action_for("KEY_LEFT"), keys.PREV_PAGE)
+        self.assertEqual(keys.action_for("KEY_C"), keys.NEXT_PAGE)
+        self.assertEqual(keys.action_for("KEY_Z"), keys.PREV_PAGE)
         self.assertEqual(keys.action_for("KEY_W"), keys.WAYPOINT)
         self.assertEqual(keys.action_for("KEY_ENTER"), keys.WAYPOINT)
         self.assertEqual(keys.action_for("KEY_ESC"), keys.QUIT)
@@ -103,7 +105,7 @@ class KeyTests(unittest.TestCase):
                      hardware.KEYS_WAYPOINT + hardware.KEYS_QUIT +
                      hardware.KEYS_SETTING_PREV + hardware.KEYS_SETTING_NEXT +
                      hardware.KEYS_SETTING_DEC + hardware.KEYS_SETTING_INC +
-                     hardware.KEYS_DINO_JUMP):
+                     hardware.KEYS_DINO_JUMP + hardware.KEYS_DINO_TOGGLE):
             self.assertRegex(name, r"^KEY_[A-Z0-9]+$")
 
 

@@ -5,5 +5,5 @@ Only the standard library is needed for the core; Pillow, numpy, evdev and
 pyserial are optional imports used on the device (or for screenshots).
 """
 
-__version__ = "0.2"
+__version__ = "0.3"
 APP_TITLE = "JP226 GPS-IMU Logger"

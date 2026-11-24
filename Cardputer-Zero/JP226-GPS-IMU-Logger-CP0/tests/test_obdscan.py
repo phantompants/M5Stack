@@ -97,6 +97,13 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(cfg["did_ranges"], "0000-FFFF")
         self.assertNotIn("bogus", cfg)
 
+    def test_auto_protocol_is_default_and_detects_adapter_protocol(self):
+        fake, summary, _ = self.scan(protocol=obdscan.DEFAULTS["protocol"],
+                                     steps="adapter,standard")
+        self.assertEqual(obdscan.DEFAULTS["protocol"], "0")
+        self.assertEqual(summary["protocol"], "6")
+        self.assertIn("ATDPN", fake.requests)
+
 
 if __name__ == "__main__":
     unittest.main()

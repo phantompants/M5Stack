@@ -179,19 +179,37 @@ def run_live(args, settings) -> int:
                     elif (page == ui.SETTINGS_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_INC):
                         app.adjust_vehicle_setting(1)
+                    elif (page == ui.OBD_PAGE_INDEX and
+                          name in hardware.KEYS_SETTING_PREV):
+                        app.select_obd_option(-1)
+                    elif (page == ui.OBD_PAGE_INDEX and
+                          name in hardware.KEYS_SETTING_NEXT):
+                        app.select_obd_option(1)
+                    elif (page == ui.OBD_PAGE_INDEX and
+                          name in hardware.KEYS_SETTING_DEC):
+                        app.adjust_obd_option(-1)
+                    elif (page == ui.OBD_PAGE_INDEX and
+                          name in hardware.KEYS_SETTING_INC):
+                        app.adjust_obd_option(1)
                     elif (page == ui.DINO_PAGE_INDEX and
                           name in hardware.KEYS_DINO_JUMP):
                         app.press_dino(now)
+                    elif (page == ui.DINO_PAGE_INDEX and
+                          name in hardware.KEYS_DINO_TOGGLE):
+                        app.toggle_dino_character()
                     elif action == keys.WAYPOINT:
                         if page == ui.SETTINGS_PAGE_INDEX:
                             app.store.put(vehicle_setup=app.vehicle)
                         elif page == ui.DINO_PAGE_INDEX:
                             app.press_dino(now)
+                        elif page == ui.OBD_PAGE_INDEX:
+                            app.start_obd_scan()
                         else:
                             app.create_waypoint(now)
                     elif action == keys.QUIT:
                         running["on"] = False
-            if screen is not None and now - last_draw >= 500:
+            draw_interval = 33 if page == ui.DINO_PAGE_INDEX else 100
+            if screen is not None and now - last_draw >= draw_interval:
                 last_draw = now
                 screen.show(ui.render_page(page, app.ui_model(now)))
             if args.headless and now - last_print >= 10_000:
@@ -201,7 +219,7 @@ def run_live(args, settings) -> int:
                     m["log_state"], int(m["fix_valid"]), m["satellites"],
                     m["speed_kmh"], m["rows_written"], m["gps_status"]),
                       flush=True)
-            time.sleep(0.01 if app.imu.available else 0.05)
+            time.sleep(0.01)
     finally:
         reader.stop()
         app.close()

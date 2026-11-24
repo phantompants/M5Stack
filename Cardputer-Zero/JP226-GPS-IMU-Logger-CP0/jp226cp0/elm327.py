@@ -280,7 +280,11 @@ class Elm327:
             reply = self.command("0100", 8.0)
             info["0100@" + p] = reply
             if any(parse_frames(reply)):
-                info["protocol"] = p
+                detected = self.command("ATDPN")
+                info["ATDPN"] = detected
+                reported = detected[-1].strip().upper() if detected else ""
+                info["protocol"] = (
+                    reported if reported in "0123456789ABCDEF" else p)
                 break
         return info
 
