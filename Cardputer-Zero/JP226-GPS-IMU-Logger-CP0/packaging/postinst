@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+# video: /dev/fb0, input: evdev keyboard, dialout: serial GPS (/dev/tty*).
+# [UNVERIFIED] which of these the CardputerZero image actually needs.
+for grp in video input dialout; do
+    if getent group "$grp" >/dev/null && id -u pi >/dev/null 2>&1; then
+        usermod -aG "$grp" pi || true
+    fi
+done
+exit 0

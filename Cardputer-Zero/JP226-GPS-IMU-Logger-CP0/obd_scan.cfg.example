@@ -1,0 +1,47 @@
+# OBD discovery scan settings: python3 -m jp226cp0.obdscan --config obd_scan.cfg
+# Read-only: services 01, 09 and 22 only. Ignition on; engine running is best.
+
+# Which link: usb (vLinker USB), wifi, bt (Bluetooth Classic) or ble
+link = usb
+
+# usb: blank = the first USB serial port (vLinker USB shows as /dev/ttyUSB0
+# or /dev/ttyACM0). Baud is ignored by most USB adapters.
+device =
+baud = 38400
+
+# wifi: most Wi-Fi ELM327 adapters. Join the adapter's Wi-Fi network first.
+host = 192.168.0.10
+port = 35000
+
+# bt (Classic SPP): pair first (bluetoothctl: scan on, pair, trust), PIN 1234/0000
+bt_address =
+bt_channel = 1
+
+# ble (vLinker FS/MS, Vgate BLE): a name part or address; blank = first OBD-ish name
+ble_name =
+
+# 0 = automatic (recommended for broad vehicle compatibility); 6 = CAN 11-bit 500k
+protocol = 0
+
+steps = adapter,standard,modules,dids
+
+# Request addresses to try. Ford modules reply on address + 8.
+modules = 700-7F7
+
+# Mode 22 DIDs to try on every module found.
+#   F100-F1FF  identification (VIN, part numbers, serials)
+#   DD00-DDFF  Ford common values (odometer, battery...)
+#   2800-28FF  tyre pressures on other Fords (2813-2816)
+#   4000-40FF  more Ford values
+# "everything" = 0000-FFFF on every module: many hours; use a long budget.
+did_ranges = F100-F1FF,DD00-DDFF,2800-28FF,4000-40FF
+
+# Per-request wait while looking for modules (ms, multiple of 4)
+module_timeout_ms = 100
+
+# Time limits
+per_module_minutes = 10
+total_minutes = 90
+
+# Where obd_scan_<time>.jsonl goes (blank = ./obd_scans)
+out_dir =

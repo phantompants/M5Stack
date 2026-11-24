@@ -1,0 +1,25 @@
+# Copy to ~/.config/jp226-gps-imu-logger/logger.cfg (or /etc/jp226-gps-imu-logger/logger.cfg,
+# or point $JP226_CP0_CONFIG at it). Every value is optional.
+#
+# Wi-Fi is NOT configured here: the CardputerZero runs Linux, join networks with
+# the operating system. Never put a Wi-Fi password in this repository.
+
+# When true (default) the time zone follows the GPS position (offline table of
+# Australian zones; same answer 3 checks 30 s apart before it changes).
+timezone_auto=true
+
+# Optional POSIX rule or Australian IANA name used until the GPS position says
+# otherwise (default: the saved zone, else Australia/Sydney).
+# timezone=AEST-10AEDT,M10.1.0,M4.1.0/3
+
+# GPS serial port. Leave both commented to auto-detect (tries /dev/serial0,
+# /dev/ttyAMA0, /dev/ttyS0, /dev/ttyUSB0, /dev/ttyACM0 at 115200, 9600, 38400,
+# 4800, 19200, 57600 baud). HARDWARE UNVERIFIED: confirm next week.
+# gps_device=/dev/ttyAMA0
+# gps_baud=115200
+
+# Where CSV files are written (default ~/telemetry).
+# data_dir=/home/pi/telemetry
+
+# auto = system clock until GPS time is seen, then GPS; gps = GPS only; system = never use GPS time.
+# clock_source=auto

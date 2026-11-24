@@ -1,0 +1,6 @@
+# Only needed on the CardputerZero (the core and the unit tests use the
+# standard library alone). Screenshots on a desktop need Pillow.
+Pillow>=10.0
+numpy>=1.24
+evdev>=1.6
+pyserial>=3.5
