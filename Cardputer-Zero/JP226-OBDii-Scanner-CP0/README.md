@@ -36,16 +36,19 @@ what usable telemetry a vehicle exposes for:
 - **Live Monitor page:** polls the recommended fast PIDs in real time and
   displays live Speed, RPM, Pedal/Throttle, Torque/Load, SoC/Voltage, Temp,
   and actual refresh rate (`Hz`).
-- **Portable outputs:** saves every raw request/reply (`obd_scan_<UTC>.jsonl`),
-  structured capability profiles (`obd_profile_<VIN>_<UTC>.json`), and live
-  polling traces (`obd_live_<UTC>.jsonl`) for later AI or offline analysis under
-  `~/telemetry/obd_scanner/` (or `~/obd_scanner/` if `~/telemetry` is not writable).
+- **Portable outputs & iPhone Wi-Fi transfer:** saves every raw request/reply
+  (`obd_scan_<UTC>.jsonl`), structured capability profiles
+  (`obd_profile_<VIN>_<UTC>.json`), and live polling traces
+  (`obd_live_<UTC>.jsonl`) under `~/telemetry/obd_scanner/` (or `~/obd_scanner/`).
+  Built-in local Wi-Fi HTTP server (`SHARE` page, default port `8080`, or
+  `--web`) lets an iPhone on the same Wi-Fi view files or download individual
+  logs / a single `.zip` bundle directly in Safari.
 
 ## Controls (CardputerZero 320x170 LCD + evdev)
 
 | Key | Action |
 | --- | --- |
-| `Left` / `Right` / `Z` / `C` / `Tab` / `[` / `]` | Switch pages (`CONNECT`, `SCAN`, `LIVE`, `LOGGER FIT`, `EV SOUND FIT`, `MODULES`, `DIAG`) |
+| `Left` / `Right` / `Z` / `C` / `Tab` / `[` / `]` | Switch pages (`CONNECT`, `SCAN`, `LIVE`, `LOGGER FIT`, `EV SOUND FIT`, `MODULES`, `SHARE`, `DIAG`) |
 | `4`–`8` (directly below LCD) | Contextual page shortcuts shown in the bottom bar (e.g. `4 LINK`, `5 TGT`, `6 PROT`, `7 MODE`, `8 SCAN` / `LIVE`) |
 | `Up` / `Down` / `F` / `X` | Select row on `CONNECT` or scroll `MODULES` |
 | `A` / `D` / `W` / `E` / `-` / `=` | Change selected setting on `CONNECT` |

@@ -53,6 +53,8 @@ class AppAndUiTests(unittest.TestCase):
         self.assertEqual(keys.page_action_for("LIVE", "KEY_8"), keys.TOGGLE_LIVE)
         self.assertEqual(keys.page_action_for("EV SOUND FIT", "KEY_4"), keys.EV_SCAN)
         self.assertEqual(keys.page_action_for("MODULES", "KEY_5"), keys.SCROLL_DOWN)
+        self.assertEqual(keys.page_action_for("SHARE", "KEY_4"), keys.TOGGLE_WEB)
+        self.assertEqual(keys.page_action_for("SHARE", "KEY_5"), keys.CYCLE_WEB_PORT)
         self.assertEqual(len(ui.footer_slots(0)), 5)
 
     def test_page_action_dispatch(self):

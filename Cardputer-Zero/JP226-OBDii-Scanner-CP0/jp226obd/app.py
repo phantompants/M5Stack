@@ -14,8 +14,10 @@ from .elm327 import Elm327
 from .fake_elm import DEMO_PROFILES
 from .live import DEFAULT_LIVE_PIDS, LiveReader
 from .statestore import StateStore
+from .webserver import LogWebServer, list_log_files
 
 STATE_FILE_NAME = "scanner_state.json"
+WEB_PORTS = (8080, 8000, 8888)
 
 
 def default_data_dir() -> str:
@@ -94,6 +96,14 @@ class ObdScannerApp:
             "samples": 0,
             "error": "",
         }
+        try:
+            saved_port = int(self.store.get("web_port", 8080))
+        except (TypeError, ValueError):
+            saved_port = 8080
+        self.web_port = saved_port if saved_port in WEB_PORTS else 8080
+        self.web = LogWebServer(
+            self.data_dir, port=self.web_port, profile_getter=lambda: self.profile
+        )
 
     def _load_last_profile(self) -> None:
         last_path = self.store.get("last_profile_path", "")
@@ -396,11 +406,39 @@ class ObdScannerApp:
             if transport is not None:
                 transport.close()
 
+    def start_web(self) -> None:
+        if self.web.running and self.web.port == self.web_port:
+            return
+        self.web.stop()
+        self.web = LogWebServer(
+            self.data_dir, port=self.web_port, profile_getter=lambda: self.profile
+        )
+        self.web.start()
+
+    def stop_web(self) -> None:
+        self.web.stop()
+
+    def toggle_web(self) -> None:
+        if self.web.running:
+            self.stop_web()
+        else:
+            self.start_web()
+
+    def cycle_web_port(self) -> None:
+        was_running = self.web.running
+        idx = WEB_PORTS.index(self.web_port) if self.web_port in WEB_PORTS else 0
+        self.web_port = WEB_PORTS[(idx + 1) % len(WEB_PORTS)]
+        self.store.put(web_port=self.web_port)
+        if was_running:
+            self.stop_web()
+            self.start_web()
+
     def close(self) -> None:
         self._scan_cancel.set()
         if self._scan_thread is not None and self._scan_thread.is_alive():
             self._scan_thread.join(timeout=5)
         self.stop_live()
+        self.stop_web()
 
     # --------------------------------------------------------------- UI model
     def ui_model(self, now_ms: int) -> Dict[str, object]:
@@ -414,6 +452,7 @@ class ObdScannerApp:
         dtcs = prof.get("dtcs") or self.summary.get("dtcs") or {}
         pids = prof.get("standard_pids") or self.summary.get("pid_values") or {}
 
+        ip_url, local_url = self.web.urls()
         return {
             "version": __version__,
             "now_ms": now_ms,
@@ -452,4 +491,11 @@ class ObdScannerApp:
             "last_key": self.last_key,
             "build_git_hash": self.build_info["git_hash"],
             "build_date": self.build_info["build_date"],
+            "web_running": self.web.running,
+            "web_port": self.web_port,
+            "web_url": ip_url,
+            "web_local_url": local_url,
+            "web_files_count": len(list_log_files(self.data_dir)),
+            "web_downloads": self.web.downloads,
+            "web_error": self.web.error,
         }

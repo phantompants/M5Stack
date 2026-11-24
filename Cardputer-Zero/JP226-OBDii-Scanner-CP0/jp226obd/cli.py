@@ -44,6 +44,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="list detected USB serial ports and exit")
     p.add_argument("--ble-scan", action="store_true",
                    help="scan nearby BLE adapters and exit")
+    p.add_argument("--web", action="store_true",
+                   help="serve saved OBD logs/profiles over local Wi-Fi HTTP")
+    p.add_argument("--web-port", type=int, default=8080,
+                   help="Wi-Fi HTTP server port (default: 8080)")
     p.add_argument("--version", action="version", version=__version__)
     return p
 
@@ -88,6 +92,7 @@ def run_screenshot_mode(args) -> int:
         cfg = _override_cfg(app, args)
         cfg["link"] = "demo"
         app.run_scan_sync(cfg)
+        app.start_web()
         model = app.ui_model(1200)
         # Populate live values on the LIVE page screenshot from the scanned PIDs.
         model["live"] = {
@@ -178,12 +183,46 @@ def _run_page_action(app: ObdScannerApp, page_action: str, page: int) -> int:
         app.scroll_modules(1)
     elif page_action == keys.REFRESH_DEVS:
         app.refresh_devices()
+    elif page_action == keys.TOGGLE_WEB:
+        app.toggle_web()
+    elif page_action == keys.CYCLE_WEB_PORT:
+        app.cycle_web_port()
+    elif page_action == keys.GO_SHARE:
+        return ui.PAGES.index("SHARE")
     return page
+
+
+def run_web_only(args) -> int:
+    app = ObdScannerApp(data_dir=args.out, config_path=args.config)
+    app.web_port = args.web_port
+    app.start_web()
+    if not app.web.running:
+        print("Failed to start web server: {}".format(app.web.error), file=sys.stderr)
+        app.close()
+        return 2
+    ip_url, local_url = app.web.urls()
+    print("Serving OBD logs from {}".format(app.data_dir))
+    print("Open in iPhone Safari: {}  or  {}".format(ip_url, local_url))
+    running = {"on": True}
+
+    def _stop(_signum, _frame):
+        running["on"] = False
+
+    signal.signal(signal.SIGINT, _stop)
+    try:
+        while running["on"]:
+            time.sleep(0.5)
+    finally:
+        app.close()
+    return 0
 
 
 def run_live_ui(args) -> int:
     app = ObdScannerApp(data_dir=args.out, config_path=args.config)
     _apply_args(app, args)
+    if args.web_port:
+        app.web_port = args.web_port
+    app.start_web()
 
     screen = None
     key_reader = None
@@ -289,6 +328,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.screenshot:
         return run_screenshot_mode(args)
+    if args.web:
+        return run_web_only(args)
     if args.headless:
         return run_headless_scan(args)
     return run_live_ui(args)

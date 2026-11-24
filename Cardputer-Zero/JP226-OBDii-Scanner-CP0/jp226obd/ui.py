@@ -12,6 +12,7 @@ PAGES = (
     "LOGGER FIT",
     "EV SOUND FIT",
     "MODULES",
+    "SHARE",
     "DIAG",
 )
 
@@ -329,6 +330,26 @@ def _page_modules(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
     _text(draw, 8, 138, dtc_line[:44], f.tiny, _TEXT if stored else _DIM)
 
 
+def _page_share(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
+    running = bool(m.get("web_running"))
+    _text(draw, 8, 25, "IPHONE / WI-FI LOG TRANSFER", f.small, _ACCENT)
+    _text(draw, w - 8, 24, "ON" if running else "OFF", f.row,
+          _GOOD if running else _BAD, "r")
+    if running:
+        draw.rectangle([4, 44, w - 4, 88], fill=_PANEL)
+        _text(draw, w // 2, 48, str(m.get("web_url", "--")), f.row, _GOOD, "c")
+        _text(draw, w // 2, 68, str(m.get("web_local_url", "--")), f.small, _TEXT, "c")
+    elif m.get("web_error"):
+        _text(draw, 8, 54, str(m["web_error"])[:40], f.small, _BAD)
+    else:
+        _text(draw, w // 2, 58, "Server stopped (press 4 WEB)", f.small, _WARN, "c")
+
+    _text(draw, 8, 98, "FILES: {}   DOWNLOADS: {}".format(
+        m.get("web_files_count", 0), m.get("web_downloads", 0)), f.small, _TEXT)
+    _text(draw, 8, 118, "Open URL in iPhone Safari on same Wi-Fi", f.small, _DIM)
+    _text(draw, 8, 136, "Tap Download or ZIP -> Files app", f.tiny, _DIM)
+
+
 def _page_diag(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
     ad = m["adapter_details"]
     rows = [
@@ -353,6 +374,7 @@ _PAGE_FUNCS = (
     _page_logger_fit,
     _page_ev_fit,
     _page_modules,
+    _page_share,
     _page_diag,
 )
 

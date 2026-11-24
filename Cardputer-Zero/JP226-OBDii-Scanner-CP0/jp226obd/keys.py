@@ -28,6 +28,9 @@ FULL_SCAN = "full_scan"
 SCROLL_UP = "scroll_up"
 SCROLL_DOWN = "scroll_down"
 REFRESH_DEVS = "refresh_devs"
+TOGGLE_WEB = "toggle_web"
+CYCLE_WEB_PORT = "cycle_web_port"
+GO_SHARE = "go_share"
 
 KIND_NAV = "nav"
 KIND_EDIT = "edit"
@@ -70,8 +73,14 @@ PAGE_ACTIONS: Dict[str, Tuple[Tuple[str, str, str, str], ...]] = {
         ("KEY_6", "FULL", FULL_SCAN, KIND_EDIT),
         ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
     ),
+    "SHARE": (
+        ("KEY_4", "WEB", TOGGLE_WEB, KIND_RUN),
+        ("KEY_5", "PORT", CYCLE_WEB_PORT, KIND_EDIT),
+        ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_NAV),
+    ),
     "DIAG": (
         ("KEY_4", "RFRSH", REFRESH_DEVS, KIND_EDIT),
+        ("KEY_6", "SHARE", GO_SHARE, KIND_NAV),
         ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
     ),
 }
