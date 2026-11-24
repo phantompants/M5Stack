@@ -31,6 +31,9 @@ REFRESH_DEVS = "refresh_devs"
 TOGGLE_WEB = "toggle_web"
 CYCLE_WEB_PORT = "cycle_web_port"
 GO_SHARE = "go_share"
+GO_DINO = "go_dino"
+DINO_JUMP = "dino_jump"
+DINO_TOGGLE = "dino_toggle"
 
 KIND_NAV = "nav"
 KIND_EDIT = "edit"
@@ -83,6 +86,14 @@ PAGE_ACTIONS: Dict[str, Tuple[Tuple[str, str, str, str], ...]] = {
         ("KEY_6", "SHARE", GO_SHARE, KIND_NAV),
         ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
     ),
+    "FOSSIL RECORD": (
+        ("KEY_4", "SCAN", TOGGLE_SCAN, KIND_NAV),
+        ("KEY_8", "DINO", GO_DINO, KIND_RUN),
+    ),
+    "DINO DASH": (
+        ("KEY_4", "DINO", DINO_TOGGLE, KIND_EDIT),
+        ("KEY_8", "JUMP", DINO_JUMP, KIND_RUN),
+    ),
 }
 
 
@@ -132,7 +143,7 @@ class EvdevKeys:
             ecodes.KEY_UP, ecodes.KEY_DOWN, ecodes.KEY_ENTER, ecodes.KEY_SPACE,
             ecodes.KEY_W, ecodes.KEY_E, ecodes.KEY_A, ecodes.KEY_D,
             ecodes.KEY_F, ecodes.KEY_X, ecodes.KEY_Z, ecodes.KEY_C,
-            ecodes.KEY_R, ecodes.KEY_TAB,
+            ecodes.KEY_R, ecodes.KEY_TAB, ecodes.KEY_B, ecodes.KEY_SEMICOLON,
             ecodes.KEY_4, ecodes.KEY_5, ecodes.KEY_6, ecodes.KEY_7,
             ecodes.KEY_8,
         )

@@ -55,10 +55,13 @@ class AppAndUiTests(unittest.TestCase):
         self.assertEqual(keys.page_action_for("MODULES", "KEY_5"), keys.SCROLL_DOWN)
         self.assertEqual(keys.page_action_for("SHARE", "KEY_4"), keys.TOGGLE_WEB)
         self.assertEqual(keys.page_action_for("SHARE", "KEY_5"), keys.CYCLE_WEB_PORT)
+        self.assertEqual(keys.page_action_for("FOSSIL RECORD", "KEY_8"), keys.GO_DINO)
+        self.assertEqual(keys.page_action_for("DINO DASH", "KEY_4"), keys.DINO_TOGGLE)
+        self.assertEqual(keys.page_action_for("DINO DASH", "KEY_8"), keys.DINO_JUMP)
         self.assertEqual(len(ui.footer_slots(0)), 5)
         self.assertEqual([ui.footer_slot_x(i, 320) for i in range(5)], [53, 107, 160, 213, 267])
 
-    def test_page_action_dispatch(self):
+    def test_page_action_dispatch_and_dino(self):
         tmp = tempfile.mkdtemp()
         app = ObdScannerApp(data_dir=tmp)
         try:
@@ -66,9 +69,19 @@ class AppAndUiTests(unittest.TestCase):
             cli._run_page_action(app, keys.CYCLE_LINK, ui.CONNECT_PAGE_INDEX)
             self.assertNotEqual(app.link, start_link)
             self.assertEqual(
-                cli._run_page_action(app, keys.GO_MODULES, ui.LOGGER_PAGE_INDEX if hasattr(ui, "LOGGER_PAGE_INDEX") else 3),
+                cli._run_page_action(app, keys.GO_MODULES, 3),
                 ui.PAGES.index("MODULES"),
             )
+            self.assertEqual(
+                cli._run_page_action(app, keys.GO_DINO, ui.FOSSIL_PAGE_INDEX),
+                ui.DINO_PAGE_INDEX,
+            )
+            self.assertEqual(app.dino.character, "TREX")
+            cli._run_page_action(app, keys.DINO_TOGGLE, ui.DINO_PAGE_INDEX)
+            self.assertEqual(app.dino.character, "BRONTO")
+            app.tick_dino(100)
+            cli._run_page_action(app, keys.DINO_JUMP, ui.DINO_PAGE_INDEX, 120)
+            self.assertEqual(app.dino.state, app.dino.PLAYING)
         finally:
             app.close()
 

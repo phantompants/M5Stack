@@ -14,12 +14,16 @@ PAGES = (
     "MODULES",
     "SHARE",
     "DIAG",
+    "FOSSIL RECORD",
+    "DINO DASH",
 )
 
 CONNECT_PAGE_INDEX = PAGES.index("CONNECT")
 SCAN_PAGE_INDEX = PAGES.index("SCAN")
 LIVE_PAGE_INDEX = PAGES.index("LIVE")
 MODULES_PAGE_INDEX = PAGES.index("MODULES")
+FOSSIL_PAGE_INDEX = PAGES.index("FOSSIL RECORD")
+DINO_PAGE_INDEX = PAGES.index("DINO DASH")
 
 _BG = (8, 10, 16)
 _PANEL = (22, 27, 40)
@@ -371,6 +375,143 @@ def _page_diag(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
     _text(draw, 8, 141, "Build {}   Q/Esc quits".format(m["build_date"]), f.tiny, _DIM)
 
 
+_DINO_FRAMES = (
+    (
+        "...................GGGGG", "..................GGGWKG",
+        ".................GGGGGGG", "..................GGGGGG",
+        "...............GGGGGGGGG", ".............GGGGGGGGGGG",
+        ".......D.D.D.GGGGGGGGGG.", "....GGGGGGGGGGGGGGGG....",
+        "..GGJGGJGGJGGGGGGGGG....", "...GGDGGDGGDGGGGGGG.....",
+        "....GGGGGGGGGGGGGG......", "......GGGGGGGGGGGG......",
+        ".......GG....GG.........", ".......GG....GG.........",
+        "......GGGG..GGGG........", "........................",
+    ),
+    (
+        "...................GGGGG", "..................GGGWKG",
+        ".................GGGGGGG", "..................GGGGGG",
+        "...............GGGGGGGGG", ".............GGGGGGGGGGG",
+        ".......D.D.D.GGGGGGGGGG.", "....GGGGGGGGGGGGGGGG....",
+        "..GGJGGJGGJGGGGGGGGG....", "...GGDGGDGGDGGGGGGG.....",
+        "....GGGGGGGGGGGGGG......", "......GGGGGGGGGGGG......",
+        "......GG....GG..........", "......GG....GG..........",
+        ".....GGGG..GGGG.........", "........................",
+    ),
+)
+_BRONTO_FRAMES = (
+    (
+        "..................GGGG..", ".................GGGWKG.",
+        ".................GGGGGGG", ".................GGG....",
+        "................GGG.....", "...............GGG......",
+        ".......D.D.D..GGG.......", ".....GGGGGGGGGGGG.......",
+        "...GGGDGGGGDGGGGG.......", "..GGGGGGGGGGGGGGG.......",
+        ".GG.GGGGGGGGGGGGG.......", "GG...GGGGGGGGGGG........",
+        ".....GG..GG..GG..GG.....", ".....GG..GG..GG..GG.....",
+        "....GGG.GGG.GGG.GGG.....", "........................",
+    ),
+    (
+        "..................GGGG..", ".................GGGWKG.",
+        ".................GGGGGGG", ".................GGG....",
+        "................GGG.....", "...............GGG......",
+        ".......D.D.D..GGG.......", ".....GGGGGGGGGGGG.......",
+        "...GGGDGGGGDGGGGG.......", "..GGGGGGGGGGGGGGG.......",
+        ".GG.GGGGGGGGGGGGG.......", "GG...GGGGGGGGGGG........",
+        "......GG.GG....GG.GG....", "......GG.GG....GG.GG....",
+        ".....GGGGGG...GGGGGG....", "........................",
+    ),
+)
+_DINO_COLOURS = {
+    "G": (60, 180, 75), "D": (30, 110, 40),
+    "J": (150, 210, 115), "W": (255, 255, 255), "K": (0, 0, 0),
+}
+_JOKES = (
+    "No dinos were harmed", "Small arms, big scans", "EVs need no fossil fuel",
+    "Rawr means read-only", "Data finds a way", "Clever girl.",
+    "Must go faster!", "DTCs now extinct*", "T-Rex approved",
+    "Jurassic OBD OK", "Scanning since 65M BC", "Dino-mite telemetry",
+)
+
+
+def _draw_sprite(draw, x: int, y: int, scale: int, frame: int, character: str) -> None:
+    rows = _BRONTO_FRAMES if character == "BRONTO" else _DINO_FRAMES
+    rows = rows[frame % len(rows)]
+    for row, line in enumerate(rows):
+        for col, pixel in enumerate(line):
+            colour = _DINO_COLOURS.get(pixel)
+            if colour:
+                left, top = x + col * scale, y + row * scale
+                draw.rectangle([left, top, left + scale - 1, top + scale - 1],
+                               fill=colour)
+
+
+def _page_fossil(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
+    _text(draw, 8, 26, "JP226 OBD-II SCANNER", f.row, _ACCENT)
+    _text(draw, 8, 46, "VERSION", f.small, _DIM)
+    _text(draw, 92, 45, "v" + str(m["version"]), f.row, _TEXT)
+    _text(draw, 8, 65, "BUILD", f.small, _DIM)
+    _text(draw, 92, 64, str(m["build_git_hash"]), f.row, _TEXT)
+    _text(draw, 8, 84, "DATE", f.small, _DIM)
+    _text(draw, 92, 83, str(m["build_date"]), f.row, _TEXT)
+    frame = (m["now_ms"] // 150) % 2
+    _draw_sprite(draw, 14, 105, 2, frame, "BRONTO")
+    _draw_sprite(draw, 244, 105, 2, frame, "TREX")
+    _text(draw, 64, 139, "BRONTO", f.tiny, _GOOD, "c")
+    _text(draw, 292, 139, "T-REX", f.tiny, _WARN, "c")
+    joke = _JOKES[(m["now_ms"] // 4000) % len(_JOKES)]
+    _text(draw, w // 2, 118, joke, f.tiny, _ACCENT, "c")
+
+
+def _page_dino(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
+    scale = 2
+    left = 4
+    play_width = w - 8
+    ground_y = 112
+    now_ms = m["now_ms"]
+    _text(draw, w // 2, 24, m["dino_status"] or
+          ("AUTORUN  >5 KM/H" if m["dino_moving"] else "PARKED: PRESS 8/SPACE"),
+          f.small, _WARN, "c")
+    if m["dino_moving"]:
+        span = play_width + 24 * scale
+        x = left + int((now_ms // 25) % span) - 24 * scale
+        _draw_sprite(draw, x, ground_y - 16 * scale, scale,
+                     (now_ms // 150) % 2, m["dino_character"])
+        for gx in range(left - int((now_ms // 25) % (4 * scale)),
+                        left + play_width, 4 * scale):
+            draw.line([gx, ground_y, gx + 2 * scale, ground_y],
+                      fill=(123, 123, 123), width=1)
+    else:
+        draw.line([left, ground_y, left + play_width, ground_y],
+                  fill=(123, 123, 123), width=1)
+        for obstacle in m["dino_obstacles"]:
+            x = left + int(obstacle["x"] * scale)
+            width = obstacle["width"] * scale
+            height = obstacle["height"] * scale
+            if x >= left + play_width or x + width <= left:
+                continue
+            if obstacle["cactus"]:
+                draw.rectangle([x + 2 * scale, ground_y - height,
+                                x + 3 * scale, ground_y - 1], fill=(40, 160, 60))
+                draw.rectangle([x, ground_y - 6 * scale,
+                                x + 2 * scale - 1, ground_y - 5 * scale],
+                               fill=(40, 160, 60))
+                draw.rectangle([x, ground_y - 8 * scale,
+                                x + scale - 1, ground_y - 5 * scale],
+                               fill=(40, 160, 60))
+                draw.rectangle([x + 4 * scale, ground_y - 4 * scale,
+                                x + 6 * scale - 1, ground_y - 3 * scale],
+                               fill=(40, 160, 60))
+            else:
+                draw.rounded_rectangle(
+                    [x, ground_y - height, x + width - 1, ground_y - 1],
+                    radius=scale, fill=(132, 132, 132))
+        y = ground_y - 16 * scale - int(m["dino_y"] * scale)
+        _draw_sprite(draw, left + 4 * scale, y, scale,
+                     (now_ms // 150) % 2 if m["dino_state"] == "PLAYING" else 0,
+                     m["dino_character"])
+    hint = "B/4: T-REX / BRONTO" if m["dino_moving"] else "4/B: DINO   8/SPACE: JUMP"
+    _text(draw, w // 2, 117, hint, f.tiny, _DIM, "c")
+    _text(draw, w // 2, 134, "Brought to you by JP226Prints", f.tiny, _ACCENT, "c")
+
+
 _PAGE_FUNCS = (
     _page_connect,
     _page_scan,
@@ -380,6 +521,8 @@ _PAGE_FUNCS = (
     _page_modules,
     _page_share,
     _page_diag,
+    _page_fossil,
+    _page_dino,
 )
 
 

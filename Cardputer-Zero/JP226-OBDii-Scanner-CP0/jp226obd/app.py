@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 from . import __version__, compatibility, elm327, hardware, scanner
 from .build_info import read_build_info
+from .dino import DinoGame
 from .elm327 import Elm327
 from .fake_elm import DEMO_PROFILES
 from .live import DEFAULT_LIVE_PIDS, LiveReader
@@ -104,6 +105,11 @@ class ObdScannerApp:
         self.web = LogWebServer(
             self.data_dir, port=self.web_port, profile_getter=lambda: self.profile
         )
+        try:
+            dino_best = int(self.store.get("dino_pb", 0))
+        except (TypeError, ValueError):
+            dino_best = 0
+        self.dino = DinoGame(dino_best)
 
     def _load_last_profile(self) -> None:
         last_path = self.store.get("last_profile_path", "")
@@ -439,6 +445,22 @@ class ObdScannerApp:
             self.stop_web()
             self.start_web()
 
+    def tick_dino(self, now_ms: int) -> None:
+        speed = 0.0
+        if self.live_active:
+            vals = self.live_snapshot.get("values", {})
+            if isinstance(vals, dict) and isinstance(vals.get("SPEED"), (int, float)):
+                speed = float(vals["SPEED"])
+        self.dino.update(now_ms, speed, 160)
+        if self.dino.take_new_best():
+            self.store.put(dino_pb=self.dino.best)
+
+    def press_dino(self, now_ms: int) -> None:
+        self.dino.press(now_ms)
+
+    def toggle_dino_character(self) -> None:
+        self.dino.toggle_character()
+
     def close(self) -> None:
         self._scan_cancel.set()
         if self._scan_thread is not None and self._scan_thread.is_alive():
@@ -504,4 +526,15 @@ class ObdScannerApp:
             "web_files_count": len(list_log_files(self.data_dir)),
             "web_downloads": self.web.downloads,
             "web_error": self.web.error,
+            "dino_state": self.dino.state,
+            "dino_moving": self.dino.moving,
+            "dino_character": self.dino.character,
+            "dino_y": self.dino.y,
+            "dino_obstacles": [
+                {"x": o.x, "width": o.width, "height": o.height, "cactus": o.cactus}
+                for o in self.dino.obstacles
+            ],
+            "dino_score": self.dino.score,
+            "dino_best": self.dino.best,
+            "dino_status": self.dino.status_text(),
         }

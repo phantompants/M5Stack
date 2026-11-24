@@ -146,7 +146,8 @@ def run_headless_scan(args) -> int:
         app.close()
 
 
-def _run_page_action(app: ObdScannerApp, page_action: str, page: int) -> int:
+def _run_page_action(app: ObdScannerApp, page_action: str, page: int,
+                     now_ms: int = 0) -> int:
     if page_action == keys.CYCLE_LINK:
         app.cycle_connect_row(0, 1)
     elif page_action == keys.CYCLE_TARGET:
@@ -189,6 +190,12 @@ def _run_page_action(app: ObdScannerApp, page_action: str, page: int) -> int:
         app.cycle_web_port()
     elif page_action == keys.GO_SHARE:
         return ui.PAGES.index("SHARE")
+    elif page_action == keys.GO_DINO:
+        return ui.DINO_PAGE_INDEX
+    elif page_action == keys.DINO_JUMP:
+        app.press_dino(now_ms)
+    elif page_action == keys.DINO_TOGGLE:
+        app.toggle_dino_character()
     return page
 
 
@@ -258,12 +265,13 @@ def run_live_ui(args) -> int:
     try:
         while running["on"]:
             now_ms = int((time.monotonic() - t0) * 1000)
+            app.tick_dino(now_ms)
             if key_reader is not None:
                 for name in key_reader.poll():
                     app.last_key = name
                     page_act = keys.page_action_for(ui.PAGES[page], name)
                     if page_act is not None:
-                        page = _run_page_action(app, page_act, page)
+                        page = _run_page_action(app, page_act, page, now_ms)
                         continue
                     act = keys.action_for(name)
                     if act == keys.NEXT_PAGE:
@@ -286,9 +294,15 @@ def run_live_ui(args) -> int:
                         app.adjust_connect_row(1)
                     elif act == keys.REFRESH:
                         app.refresh_devices()
+                    elif page == ui.DINO_PAGE_INDEX and name in hardware.KEYS_DINO_JUMP:
+                        app.press_dino(now_ms)
+                    elif page == ui.DINO_PAGE_INDEX and name in hardware.KEYS_DINO_TOGGLE:
+                        app.toggle_dino_character()
                     elif act == keys.ACTION:
                         if page == ui.LIVE_PAGE_INDEX:
                             app.toggle_live()
+                        elif page == ui.DINO_PAGE_INDEX:
+                            app.press_dino(now_ms)
                         else:
                             app.start_or_stop_scan()
                             if page == ui.CONNECT_PAGE_INDEX and app.is_scanning():
@@ -296,10 +310,11 @@ def run_live_ui(args) -> int:
                     elif act == keys.QUIT:
                         running["on"] = False
 
-            if now_ms - last_draw >= 100:
+            draw_interval = 33 if page in (ui.DINO_PAGE_INDEX, ui.FOSSIL_PAGE_INDEX) else 100
+            if now_ms - last_draw >= draw_interval:
                 last_draw = now_ms
                 screen.show(ui.render_page(page, app.ui_model(now_ms)))
-            time.sleep(0.02)
+            time.sleep(0.01)
     finally:
         app.close()
         if key_reader is not None:
