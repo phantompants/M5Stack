@@ -45,6 +45,7 @@ what usable telemetry a vehicle exposes for:
 | Key | Action |
 | --- | --- |
 | `Left` / `Right` / `Z` / `C` / `Tab` / `[` / `]` | Switch pages (`CONNECT`, `SCAN`, `LIVE`, `LOGGER FIT`, `EV SOUND FIT`, `MODULES`, `DIAG`) |
+| `4`–`8` (directly below LCD) | Contextual page shortcuts shown in the bottom bar (e.g. `4 LINK`, `5 TGT`, `6 PROT`, `7 MODE`, `8 SCAN` / `LIVE`) |
 | `Up` / `Down` / `F` / `X` | Select row on `CONNECT` or scroll `MODULES` |
 | `A` / `D` / `W` / `E` / `-` / `=` | Change selected setting on `CONNECT` |
 | `R` | Refresh USB ports or scan nearby BLE adapters |

@@ -111,6 +111,10 @@ class ObdScannerApp:
     def select_connect_row(self, delta: int) -> None:
         self.connect_selection = (self.connect_selection + delta) % 4
 
+    def cycle_connect_row(self, row: int, delta: int = 1) -> None:
+        self.connect_selection = row % 4
+        self.adjust_connect_row(delta)
+
     def scroll_modules(self, delta: int) -> None:
         modules = self.profile.get("modules", {})
         count = len(modules) if isinstance(modules, dict) else 0

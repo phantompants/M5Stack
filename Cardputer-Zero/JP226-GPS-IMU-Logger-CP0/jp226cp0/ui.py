@@ -177,7 +177,8 @@ def _page_gps(draw, f, m, w, h):
          ("HEADING", "{} deg".format(_fmt(m["heading"], ".0f")), _TEXT)),
         (("HDOP", _fmt(m["hdop"], ".2f"), _TEXT),
          ("VDOP", _fmt(m["vdop"], ".2f"), _TEXT)),
-        (("UTC", m["utc_text"] or "--", _DIM), None),
+        (("UTC", m["utc_text"] or "--", _DIM),
+         ("SOURCE", m["gps_source"], _WARN)),
     ], top=35, step=24)
 
 
@@ -288,7 +289,7 @@ def _page_diag(draw, f, m, w, h):
          ("CAMERA", "READY" if m["camera_available"] else "NOT FOUND", _TEXT)),
         (("CLOCK", "{}{}".format(m["clock_source"],
                                   " GPS" if m["clock_gps_synced"] else ""), _TEXT),
-         ("OBD", m["obd_status"], _DIM)),
+         ("GPS PWR", m["gps_power_status"] or "--", _TEXT)),
     ], top=29, step=21)
     if m["imu_error"]:
         _text(draw, 8, 144, m["imu_error"][:44], f.tiny, _WARN)

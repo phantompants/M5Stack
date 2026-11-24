@@ -4,7 +4,7 @@ import struct
 import tempfile
 import unittest
 
-from jp226obd import keys, ui
+from jp226obd import cli, keys, ui
 from jp226obd.app import ObdScannerApp
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -48,6 +48,26 @@ class AppAndUiTests(unittest.TestCase):
         self.assertEqual(keys.action_for("KEY_R"), keys.REFRESH)
         self.assertEqual(keys.action_for("KEY_ENTER"), keys.ACTION)
         self.assertEqual(keys.action_for("KEY_Q"), keys.QUIT)
+        self.assertEqual(keys.page_action_for("CONNECT", "KEY_4"), keys.CYCLE_LINK)
+        self.assertEqual(keys.page_action_for("CONNECT", "KEY_8"), keys.TOGGLE_SCAN)
+        self.assertEqual(keys.page_action_for("LIVE", "KEY_8"), keys.TOGGLE_LIVE)
+        self.assertEqual(keys.page_action_for("EV SOUND FIT", "KEY_4"), keys.EV_SCAN)
+        self.assertEqual(keys.page_action_for("MODULES", "KEY_5"), keys.SCROLL_DOWN)
+        self.assertEqual(len(ui.footer_slots(0)), 5)
+
+    def test_page_action_dispatch(self):
+        tmp = tempfile.mkdtemp()
+        app = ObdScannerApp(data_dir=tmp)
+        try:
+            start_link = app.link
+            cli._run_page_action(app, keys.CYCLE_LINK, ui.CONNECT_PAGE_INDEX)
+            self.assertNotEqual(app.link, start_link)
+            self.assertEqual(
+                cli._run_page_action(app, keys.GO_MODULES, ui.LOGGER_PAGE_INDEX if hasattr(ui, "LOGGER_PAGE_INDEX") else 3),
+                ui.PAGES.index("MODULES"),
+            )
+        finally:
+            app.close()
 
     def test_app_cycle_and_demo_scan(self):
         tmp = tempfile.mkdtemp()

@@ -14,6 +14,7 @@ from .csvlog import DailyCsv, CSV_HEADER, build_telemetry_row
 from .build_info import read_build_info
 from .camera import CameraCapture
 from .dino import DinoGame
+from . import gps_power
 from .imu import ImuReader, create_default_imu
 from .location_time import LocationTime
 from .logmode import LogStateMachine
@@ -73,6 +74,9 @@ class LoggerApp:
         self.waypoint_message = ""
         self.last_key = ""
         self.source_info = {"device": "", "baud": 0, "status": "NO SOURCE"}
+        self.gps_source = gps_power.normalise(
+            self.store.get("gps_source"), settings.gps_source)
+        self.gps_power_status = ""
         self.last_tick_ms = 0
         self.last_utc_ms: Optional[int] = None
 
@@ -182,6 +186,14 @@ class LoggerApp:
         if vehicle_settings.adjust(self.vehicle, field, delta):
             self.store.put(vehicle_setup=self.vehicle)
 
+    def toggle_gps_source(self) -> str:
+        """Switch between the LoRa Cap GPS and a Grove GPS; saved at once.
+        The caller restarts the serial reader and applies the power rails."""
+        self.gps_source = gps_power.next_source(self.gps_source)
+        self.store.put(gps_source=self.gps_source)
+        self.gps_power_status = ""
+        return self.gps_source
+
     def press_dino(self, now_ms: int) -> None:
         self.dino.press(now_ms)
 
@@ -269,6 +281,8 @@ class LoggerApp:
             "gps_device": self.source_info.get("device", ""),
             "gps_baud": self.source_info.get("baud", 0),
             "gps_status": self.source_info.get("status", ""),
+            "gps_source": gps_power.LABELS[self.gps_source],
+            "gps_power_status": self.gps_power_status,
             "sentences_ok": self.gps.sentences_ok,
             "sentences_bad": self.gps.sentences_bad,
             "sentence_counts": dict(self.gps.counts),

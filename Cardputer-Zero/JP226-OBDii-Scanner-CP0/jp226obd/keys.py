@@ -1,6 +1,6 @@
-"""Keyboard input (evdev -> actions) for CardputerZero."""
+"""Keyboard input (evdev -> actions) for CardputerZero, including keys 4-8."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from . import hardware
 
@@ -13,6 +13,68 @@ INC = "inc"
 ACTION = "action"
 REFRESH = "refresh"
 QUIT = "quit"
+
+# Contextual number keys 4-8 (positioned directly beneath the 320x170 LCD).
+CYCLE_LINK = "cycle_link"
+CYCLE_TARGET = "cycle_target"
+CYCLE_PROTOCOL = "cycle_protocol"
+CYCLE_MODE = "cycle_mode"
+TOGGLE_SCAN = "toggle_scan"
+TOGGLE_LIVE = "toggle_live"
+GO_LIVE = "go_live"
+GO_MODULES = "go_modules"
+EV_SCAN = "ev_scan"
+FULL_SCAN = "full_scan"
+SCROLL_UP = "scroll_up"
+SCROLL_DOWN = "scroll_down"
+REFRESH_DEVS = "refresh_devs"
+
+KIND_NAV = "nav"
+KIND_EDIT = "edit"
+KIND_RUN = "run"
+KIND_DIM = "dim"
+
+# page name -> ((key_name, short_label, action, kind), ...)
+PAGE_ACTIONS: Dict[str, Tuple[Tuple[str, str, str, str], ...]] = {
+    "CONNECT": (
+        ("KEY_4", "LINK", CYCLE_LINK, KIND_EDIT),
+        ("KEY_5", "TGT", CYCLE_TARGET, KIND_EDIT),
+        ("KEY_6", "PROT", CYCLE_PROTOCOL, KIND_EDIT),
+        ("KEY_7", "MODE", CYCLE_MODE, KIND_EDIT),
+        ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
+    ),
+    "SCAN": (
+        ("KEY_4", "RFRSH", REFRESH_DEVS, KIND_EDIT),
+        ("KEY_5", "MODE", CYCLE_MODE, KIND_EDIT),
+        ("KEY_7", "LIVE", GO_LIVE, KIND_NAV),
+        ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
+    ),
+    "LIVE": (
+        ("KEY_4", "LINK", CYCLE_LINK, KIND_EDIT),
+        ("KEY_6", "SCAN", TOGGLE_SCAN, KIND_NAV),
+        ("KEY_8", "LIVE", TOGGLE_LIVE, KIND_RUN),
+    ),
+    "LOGGER FIT": (
+        ("KEY_4", "SCAN", TOGGLE_SCAN, KIND_NAV),
+        ("KEY_6", "MODS", GO_MODULES, KIND_NAV),
+        ("KEY_8", "LIVE", GO_LIVE, KIND_RUN),
+    ),
+    "EV SOUND FIT": (
+        ("KEY_4", "EVSCN", EV_SCAN, KIND_RUN),
+        ("KEY_6", "MODS", GO_MODULES, KIND_NAV),
+        ("KEY_8", "LIVE", GO_LIVE, KIND_RUN),
+    ),
+    "MODULES": (
+        ("KEY_4", "UP", SCROLL_UP, KIND_EDIT),
+        ("KEY_5", "DOWN", SCROLL_DOWN, KIND_EDIT),
+        ("KEY_6", "FULL", FULL_SCAN, KIND_EDIT),
+        ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
+    ),
+    "DIAG": (
+        ("KEY_4", "RFRSH", REFRESH_DEVS, KIND_EDIT),
+        ("KEY_8", "SCAN", TOGGLE_SCAN, KIND_RUN),
+    ),
+}
 
 
 def action_for(key_name: str) -> Optional[str]:
@@ -37,6 +99,18 @@ def action_for(key_name: str) -> Optional[str]:
     return None
 
 
+def page_actions(page: str) -> Tuple[Tuple[str, str, str, str], ...]:
+    return PAGE_ACTIONS.get(page, ())
+
+
+def page_action_for(page: str, key_name: str) -> Optional[str]:
+    """Return contextual button 4-8 action for the active page, or None."""
+    for name, _label, action, _kind in page_actions(page):
+        if name == key_name:
+            return action
+    return None
+
+
 class EvdevKeys:
     """Non-blocking key-down reader across evdev keyboard devices."""
 
@@ -50,6 +124,8 @@ class EvdevKeys:
             ecodes.KEY_W, ecodes.KEY_E, ecodes.KEY_A, ecodes.KEY_D,
             ecodes.KEY_F, ecodes.KEY_X, ecodes.KEY_Z, ecodes.KEY_C,
             ecodes.KEY_R, ecodes.KEY_TAB,
+            ecodes.KEY_4, ecodes.KEY_5, ecodes.KEY_6, ecodes.KEY_7,
+            ecodes.KEY_8,
         )
         for path in list_devices():
             try:

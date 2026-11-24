@@ -18,6 +18,11 @@ timezone_auto=true
 # gps_device=/dev/ttyAMA0
 # gps_baud=115200
 
+# Which GPS receiver feeds /dev/ttyS0. cap = LoRa-1262 GPS Cap (EXT 5V on);
+# grove = a Grove GPS unit, e.g. with the NFC/Sub-1GHz Cap fitted (Grove 5V on,
+# Grove port switched to UART). Key 4 on the GPS page changes it on the device.
+# gps_source=cap
+
 # Where CSV files are written (default ~/telemetry).
 # data_dir=/home/pi/telemetry
 

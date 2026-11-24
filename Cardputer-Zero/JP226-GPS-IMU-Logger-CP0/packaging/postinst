@@ -1,10 +1,18 @@
 #!/bin/sh
 set -e
-# video: /dev/fb0, input: evdev keyboard, dialout: serial GPS (/dev/tty*).
-# [UNVERIFIED] which of these the CardputerZero image actually needs.
-for grp in video input dialout; do
+# video: /dev/fb0, input: evdev keyboard, dialout: serial GPS (/dev/tty*),
+# gpio: /sys/class/leds/{ext_5v_out,grove_5v_out,grove_fun} GPS power control.
+for grp in video input dialout gpio; do
     if getent group "$grp" >/dev/null && id -u pi >/dev/null 2>&1; then
         usermod -aG "$grp" pi || true
     fi
 done
+# APPLaunch starts the app as pi. A run with sudo can leave ~pi/telemetry owned
+# by root, which stops all logging, so give the data back to pi.
+if id -u pi >/dev/null 2>&1; then
+    home="$(getent passwd pi | cut -d: -f6)"
+    if [ -n "$home" ] && [ -d "$home/telemetry" ]; then
+        chown -R pi:pi "$home/telemetry" || true
+    fi
+fi
 exit 0

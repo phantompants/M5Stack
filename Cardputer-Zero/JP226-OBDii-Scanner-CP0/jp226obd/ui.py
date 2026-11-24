@@ -1,9 +1,9 @@
 """320x170 Pillow UI pages for JP226 OBD-II Scanner (CardputerZero)."""
 
 import os
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-from . import hardware
+from . import hardware, keys
 
 PAGES = (
     "CONNECT",
@@ -99,25 +99,50 @@ def _status_colour(status: str):
     return _WARN
 
 
-def _header(draw, f: _Fonts, title: str, m: Dict, width: int) -> None:
+def _header(draw, f: _Fonts, title: str, index: int, m: Dict, width: int) -> None:
     draw.rectangle([0, 0, width, 21], fill=_PANEL)
-    _text(draw, 6, 2, title, f.row, _TEXT)
+    _text(draw, 6, 2, "{} {}/{}".format(title, index + 1, len(PAGES)), f.row, _TEXT)
     badge = "LIVE" if m["live_active"] else str(m["status"])
     col = _GOOD if m["live_active"] else _status_colour(badge)
     _text(draw, width - 16, 4, badge, f.small, col, "r")
     draw.ellipse([width - 12, 6, width - 5, 13], fill=col)
 
 
-def _footer(draw, index: int, width: int, height: int) -> None:
-    n = len(PAGES)
-    x0 = width // 2 - (n * 14) // 2 + 7
-    for i in range(n):
-        col = _ACCENT if i == index else (60, 66, 84)
-        draw.ellipse([x0 + i * 14 - 3, height - 9, x0 + i * 14 + 3, height - 3], fill=col)
+_KIND_COLOURS = {
+    keys.KIND_NAV: _ACCENT,
+    keys.KIND_EDIT: _WARN,
+    keys.KIND_RUN: _GOOD,
+    keys.KIND_DIM: _DIM,
+}
+
+
+def footer_slots(index: int) -> List[Tuple[int, str, str]]:
+    """5 fixed button columns aligned under the screen for keys 4-8."""
+    by_key = {
+        key_name: (label, kind)
+        for key_name, label, _action, kind in keys.page_actions(PAGES[index % len(PAGES)])
+    }
+    slots: List[Tuple[int, str, str]] = []
+    for col, key_name in enumerate(hardware.KEYS_PAGE_ACTIONS):
+        num = key_name[len("KEY_"):]
+        if key_name in by_key:
+            label, kind = by_key[key_name]
+            slots.append((col, "{} {}".format(num, label), kind))
+        else:
+            slots.append((col, num, keys.KIND_DIM))
+    return slots
+
+
+def _footer(draw, f: _Fonts, index: int, width: int, height: int) -> None:
+    draw.rectangle([0, height - 15, width, height], fill=_PANEL)
+    slot_w = width / len(hardware.KEYS_PAGE_ACTIONS)
+    for col, text, kind in footer_slots(index):
+        x = round(slot_w * (col + 0.5))
+        _text(draw, x, height - 13, text, f.tiny, _KIND_COLOURS[kind], "c")
 
 
 def _page_connect(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
-    _text(draw, 8, 24, "F/X select  W/E change  R refresh", f.small, _DIM)
+    _text(draw, 8, 24, "4-7 quick set  F/X row  W/E val", f.small, _DIM)
     for idx, (label, val) in enumerate(m["connect_rows"]):
         y = 42 + idx * 21
         sel = idx == m["connect_selection"]
@@ -127,7 +152,6 @@ def _page_connect(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
         _text(draw, 10, y + 2, label, f.small, col)
         _text(draw, w - 10, y + 1, str(val)[:22], f.row, col, "r")
     _text(draw, 8, 130, m["progress"][:42], f.small, _status_colour(m["status"]))
-    _text(draw, w // 2, 145, "ENTER: Start Scan   Left/Right: Pages", f.tiny, _DIM, "c")
 
 
 def _page_scan(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
@@ -147,7 +171,7 @@ def _page_scan(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
         y = 74 + i * 18
         _text(draw, 8, y, k, f.small, _DIM)
         _text(draw, 76, y, v, f.small, _TEXT)
-    _text(draw, w // 2, 146, "ENTER: Start / Cancel Scan", f.tiny, _DIM, "c")
+    _text(draw, w // 2, 141, "ENTER / 8: Start / Cancel Scan", f.tiny, _DIM, "c")
 
 
 def _page_live(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
@@ -240,9 +264,9 @@ def _page_logger_fit(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
 
     tpms = "YES ({}w)".format(lf.get("tpms_pressure_count", 0)) if lf.get("tpms_ready") else "NO"
     dtc = "YES" if lf.get("dtc_supported") else "NO"
-    _text(draw, 8, 130, "MIL:{}   DTC:{}   FORD TPMS:{}".format(
+    _text(draw, 8, 128, "MIL:{}   DTC:{}   FORD TPMS:{}".format(
         "YES" if lf.get("mil_supported") else "NO", dtc, tpms), f.small, _TEXT)
-    _text(draw, 8, 145, "Compatible with CP0 & Cardputer ADV", f.tiny, _DIM)
+    _text(draw, 8, 141, "Compatible with CP0 & Cardputer ADV", f.tiny, _DIM)
 
 
 def _page_ev_fit(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
@@ -261,7 +285,7 @@ def _page_ev_fit(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
         ("SOC/12V", channels.get("power_or_soc")),
     ]
     for idx, (label, info) in enumerate(rows):
-        y = 44 + idx * 17
+        y = 43 + idx * 17
         _text(draw, 8, y, label, f.small, _DIM)
         if info:
             txt = "{} ({})".format(info["source"], info.get("value", ""))
@@ -269,11 +293,11 @@ def _page_ev_fit(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
         else:
             _text(draw, 82, y, "NOT DETECTED", f.small, (95, 102, 120))
 
-    _text(draw, 8, 131, "RATE: {} Hz   MULTI-PID: {}".format(
+    _text(draw, 8, 128, "RATE: {} Hz   MULTI-PID: {}".format(
         ev.get("effective_hz", 0.0),
         "YES" if ev.get("multi_pid_supported") else "NO"), f.small, _TEXT)
     rec = " ".join(ev.get("recommended_fast_pids", [])) or "none"
-    _text(draw, 8, 145, "FAST PIDS: " + rec[:30], f.tiny, _DIM)
+    _text(draw, 8, 141, "FAST PIDS: " + rec[:30], f.tiny, _DIM)
 
 
 def _page_modules(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
@@ -316,10 +340,10 @@ def _page_diag(draw, f: _Fonts, m: Dict, w: int, _h: int) -> None:
         ("OUT DIR", str(m["data_dir"])[-28:]),
     ]
     for idx, (k, v) in enumerate(rows):
-        y = 28 + idx * 19
+        y = 26 + idx * 19
         _text(draw, 8, y, k, f.small, _DIM)
         _text(draw, 88, y, v, f.small, _TEXT)
-    _text(draw, 8, 145, "Build {}   Q/Esc quits".format(m["build_date"]), f.tiny, _DIM)
+    _text(draw, 8, 141, "Build {}   Q/Esc quits".format(m["build_date"]), f.tiny, _DIM)
 
 
 _PAGE_FUNCS = (
@@ -344,9 +368,9 @@ def render_page(
     f = _get_fonts()
     image = Image.new("RGB", (width, height), _BG)
     draw = ImageDraw.Draw(image)
-    _header(draw, f, "OBD  " + PAGES[index], model, width)
+    _header(draw, f, "OBD  " + PAGES[index], index, model, width)
     _PAGE_FUNCS[index](draw, f, model, width, height)
-    _footer(draw, index, width, height)
+    _footer(draw, f, index, width, height)
     return image
 
 

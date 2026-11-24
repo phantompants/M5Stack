@@ -21,6 +21,7 @@ CHANGE_YEAR = "change_year"
 SAVE_PROFILE = "save_profile"
 OBD_CONNECT = "obd_connect"
 SAVE_SETUP = "save_setup"
+GPS_SOURCE = "gps_source"
 
 # Footer colour groups (see ui._KIND_COLOURS).
 KIND_NAV = "nav"
@@ -33,7 +34,7 @@ _WAYPOINT_ACTIONS = (("KEY_7", "WP", WAYPOINT, KIND_SAVE),)
 # page name -> ((key name, short label, action, kind), ...)
 PAGE_ACTIONS: Dict[str, Tuple[Tuple[str, str, str, str], ...]] = {
     "SPEED": _WAYPOINT_ACTIONS,
-    "GPS": _WAYPOINT_ACTIONS,
+    "GPS": (("KEY_4", "SOURCE", GPS_SOURCE, KIND_EDIT),) + _WAYPOINT_ACTIONS,
     "IMU": _WAYPOINT_ACTIONS,
     "LOGGER": _WAYPOINT_ACTIONS,
     "WAYPOINT": _WAYPOINT_ACTIONS,

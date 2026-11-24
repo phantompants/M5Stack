@@ -141,6 +141,46 @@ def run_headless_scan(args) -> int:
         app.close()
 
 
+def _run_page_action(app: ObdScannerApp, page_action: str, page: int) -> int:
+    if page_action == keys.CYCLE_LINK:
+        app.cycle_connect_row(0, 1)
+    elif page_action == keys.CYCLE_TARGET:
+        app.cycle_connect_row(1, 1)
+    elif page_action == keys.CYCLE_PROTOCOL:
+        app.cycle_connect_row(2, 1)
+    elif page_action == keys.CYCLE_MODE:
+        app.cycle_connect_row(3, 1)
+    elif page_action == keys.TOGGLE_SCAN:
+        app.start_or_stop_scan()
+        if page == ui.CONNECT_PAGE_INDEX and app.is_scanning():
+            return ui.SCAN_PAGE_INDEX
+    elif page_action == keys.TOGGLE_LIVE:
+        app.toggle_live()
+    elif page_action == keys.GO_LIVE:
+        if not app.live_active and not app.is_scanning():
+            app.toggle_live()
+        return ui.LIVE_PAGE_INDEX
+    elif page_action == keys.GO_MODULES:
+        return ui.PAGES.index("MODULES")
+    elif page_action == keys.EV_SCAN:
+        app.scan_mode = "ev_probe"
+        app.store.put(scan_mode=app.scan_mode)
+        app.start_or_stop_scan()
+        return ui.SCAN_PAGE_INDEX
+    elif page_action == keys.FULL_SCAN:
+        app.scan_mode = "full"
+        app.store.put(scan_mode=app.scan_mode)
+        app.start_or_stop_scan()
+        return ui.SCAN_PAGE_INDEX
+    elif page_action == keys.SCROLL_UP:
+        app.scroll_modules(-1)
+    elif page_action == keys.SCROLL_DOWN:
+        app.scroll_modules(1)
+    elif page_action == keys.REFRESH_DEVS:
+        app.refresh_devices()
+    return page
+
+
 def run_live_ui(args) -> int:
     app = ObdScannerApp(data_dir=args.out, config_path=args.config)
     _apply_args(app, args)
@@ -182,6 +222,10 @@ def run_live_ui(args) -> int:
             if key_reader is not None:
                 for name in key_reader.poll():
                     app.last_key = name
+                    page_act = keys.page_action_for(ui.PAGES[page], name)
+                    if page_act is not None:
+                        page = _run_page_action(app, page_act, page)
+                        continue
                     act = keys.action_for(name)
                     if act == keys.NEXT_PAGE:
                         page = (page + 1) % len(ui.PAGES)

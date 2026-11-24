@@ -60,11 +60,18 @@ or web portal in this base.
 
 ## Hardware status and remaining checks
 
-- **GPS:** the Cap receiver uses UART1 on GPIO14/15 at 115200 baud. On the
-  current device, those pins are muxed as TXD1/RXD1, but only
-  `/dev/serial0 -> /dev/ttyS0` is exposed; `/dev/ttyAMA1` and `/dev/ttyS1`
-  are absent and the app has not confirmed NMEA traffic. The OS profile must
-  expose the Cap's UART before the app can read it.
+- **GPS:** two receivers are supported on the same UART (CM0 GPIO14/15,
+  `/dev/serial0 -> /dev/ttyS0`). Choose one with key 4 on the GPS page (saved
+  on the device) or `gps_source=cap|grove` in `logger.cfg`:
+  - **LORA CAP** (default): the Cap LoRa-1262 GPS at 115200 baud. The app turns
+    on its EXT 5V supply (`/sys/class/leds/ext_5v_out`); without it the Cap GPS
+    sends nothing. Verified on the device 2026-11-25.
+  - **GROVE**: a Grove GPS unit on the HY2.0-4P port, for example with the
+    NFC/Sub-1GHz (CC1101) Cap fitted. The app switches the port to UART
+    (`grove_fun` low), turns on Grove 5V (`grove_5v_out`) and tries 9600 baud
+    first. It turns EXT 5V off so the two receivers never share the RX line.
+  The power controls need the `gpio` group, which the package adds for `pi`.
+  DIAG shows `GPS PWR`; the GPS page shows the chosen source.
 - **Display:** `/dev/fb0` is confirmed at 320x170, 16 bpp (RGB565).
 - **IMU:** BMI270 is read through Linux IIO at its reported acceleration and
   angular-velocity scales. If no BMI270 is present, desktop use falls back to

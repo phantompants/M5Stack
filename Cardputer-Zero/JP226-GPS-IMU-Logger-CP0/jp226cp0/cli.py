@@ -15,7 +15,7 @@ import tempfile
 import time
 from typing import List, Optional
 
-from . import APP_TITLE, __version__, hardware, keys, ui
+from . import APP_TITLE, __version__, gps_power, hardware, keys, ui
 from .app import LoggerApp, replay_lines
 from .clock import Clock
 from .settings import default_data_dir, load_settings
@@ -103,7 +103,23 @@ def run_replay_mode(args, settings) -> int:
     return 0
 
 
-def _run_page_action(app: LoggerApp, action: str, now: int) -> None:
+def start_gps_reader(app: LoggerApp, settings, now_ms):
+    """Power the chosen receiver, then start a reader that tries its baud first."""
+    from .gps_source import SerialGpsReader
+    app.gps_power_status = gps_power.apply(app.gps_source)
+    print("GPS source {}: {}".format(gps_power.LABELS[app.gps_source],
+                                     app.gps_power_status), file=sys.stderr)
+    reader = SerialGpsReader(
+        now_ms, settings.gps_device, settings.gps_baud,
+        baud_candidates=gps_power.baud_order(app.gps_source,
+                                             hardware.GPS_BAUD_CANDIDATES))
+    reader.start()
+    return reader
+
+
+def _run_page_action(app: LoggerApp, action: str, now: int) -> bool:
+    """Number keys 4-8 act within the current page (they never change page).
+    Returns True when the GPS reader must be restarted."""
     """Number keys 4-8: act within the current page (they never change page)."""
     if action == keys.WAYPOINT:
         app.create_waypoint(now)
@@ -119,11 +135,13 @@ def _run_page_action(app: LoggerApp, action: str, now: int) -> None:
         app.save_obd_profile()
     elif action == keys.OBD_CONNECT:
         app.connect_obd()
+    elif action == keys.GPS_SOURCE:
+        app.toggle_gps_source()
+        return True
+    return False
 
 
 def run_live(args, settings) -> int:
-    from .gps_source import SerialGpsReader
-
     data_dir = args.out or settings.data_dir or default_data_dir()
     app = LoggerApp(settings, data_dir)
     t0 = time.monotonic()
@@ -131,8 +149,7 @@ def run_live(args, settings) -> int:
     def now_ms() -> int:
         return int((time.monotonic() - t0) * 1000)
 
-    reader = SerialGpsReader(now_ms, settings.gps_device, settings.gps_baud)
-    reader.start()
+    reader = start_gps_reader(app, settings, now_ms)
 
     screen = None
     key_reader = None
@@ -182,7 +199,10 @@ def run_live(args, settings) -> int:
                     app.last_key = name
                     page_action = keys.page_action_for(ui.PAGES[page], name)
                     if page_action is not None:
-                        _run_page_action(app, page_action, now)
+                        if _run_page_action(app, page_action, now):
+                            reader.stop()
+                            reader.join(timeout=3)
+                            reader = start_gps_reader(app, settings, now_ms)
                         continue
                     action = keys.action_for(name)
                     if action == keys.NEXT_PAGE:
