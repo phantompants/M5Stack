@@ -4,12 +4,14 @@ A Python 3 port of the [JP226-GPS-IMU-Logger](https://github.com/phantompants/JP
 ESP32 firmware: it logs a vehicle's GPS track to daily CSV files, with the same
 state machine, thresholds and CSV columns, plus waypoints and a 320x170 display.
 
-> **Status: written before the hardware arrived. Nothing here has been run on a
-> CardputerZero.** The core (NMEA parsing, fix gate, state machine, time zones,
-> CSV and waypoint files) is unit-tested on a desktop. Everything that touches
-> the device (serial port, framebuffer, keyboard, the packaging pipeline) is a
-> reasoned guess and is marked `UNVERIFIED` or `ASSUMED` in the code. Every such
-> assumption lives in one file: [`jp226cp0/hardware.py`](jp226cp0/hardware.py).
+> **Status: first hardware arrival checks completed.** The project is installed
+> as a checkout at `/home/pi/JP226-GPS-IMU-Logger-CP0` on the CardputerZero.
+> The core (NMEA parsing, fix gate, state machine, time zones, CSV and waypoint
+> files) passes 166 desktop tests and 166 device-side tests. The ST7789V
+> framebuffer is confirmed at 320x170, 16 bpp on `/dev/fb0`, serial is present
+> through `/dev/serial0` -> `/dev/ttyS0`, and the runtime Python dependencies
+> are installed. GPS, matrix-key mapping and IMU integration remain to be
+> confirmed. Hardware assumptions live in [`jp226cp0/hardware.py`](jp226cp0/hardware.py).
 
 ## M5Launcher vs APPLaunch (read this first)
 
@@ -53,19 +55,24 @@ that never steps backwards; `uptime_ms` is milliseconds since the app started;
 there is no ESP-NOW, AtomS3/Dial remote, temperature probe, weather, KML export
 or web portal in this base.
 
-## Hardware assumptions and how to confirm each next week
+## Hardware status and remaining checks
 
 | # | Assumption (all in `jp226cp0/hardware.py`) | How to confirm on the device |
 | - | --- | --- |
-| 1 | The M5 Cap LoRa-1262 / ATGM336H GPS shows up as one of `/dev/serial0`, `/dev/ttyAMA0`, `/dev/ttyS0`, `/dev/ttyUSB0`, `/dev/ttyACM0`. How the cap attaches (header G14/G15 UART? Grove?) is unknown. | `ls -l /dev/serial* /dev/ttyAMA* /dev/ttyS* /dev/ttyUSB* /dev/ttyACM*`, then `sudo python3 jp226_logger.py` and read the DIAG page (port, baud, NMEA ok/bad). If auto-detect fails, wire the cap, enable the UART in the OS config if needed, and set `gps_device`/`gps_baud`. |
+| 1 | **PARTIAL:** `/dev/serial0` -> `/dev/ttyS0` is confirmed on the Zero. The M5 Cap LoRa-1262 / ATGM336H wiring and whether NMEA is present remain unverified. | Attach the GPS, then run `sudo python3 jp226_logger.py` and read the DIAG page (port, baud, NMEA ok/bad). Set `gps_device`/`gps_baud` if auto-detect fails. |
 | 2 | 115200 baud (`kCapGpsBaud`), then 9600, 38400, 4800, 19200, 57600 (the firmware's Grove scan list). | DIAG page shows the detected baud; `sudo cat /dev/ttyXXX` after `stty -F /dev/ttyXXX 115200` should print `$GNRMC...`. |
-| 3 | Display is `/dev/fb0`, 320x170, 16 bpp RGB565, as in the AppBuilder example (size and bpp are read from the ioctls). | `fbset -i`, or just run the app. |
+| 3 | **CONFIRMED:** `/dev/fb0` is 320x170, 16 bpp (RGB565) as in the AppBuilder example. | `fbset -i`; launch the app and inspect the DIAG page. |
 | 4 | Keys are `KEY_TAB`/`KEY_RIGHTBRACE` (next page), `KEY_LEFTBRACE` (previous), `KEY_W`/`KEY_ENTER` (waypoint), `KEY_ESC`/`KEY_Q` (quit). The matrix driver's real codes are unknown. | Press keys and read "LAST KEY" on the DIAG page (or `sudo evtest`); fix `KEYS_*` in `hardware.py`. |
 | 5 | The IMU is not read (chip and bus unknown). | Identify the chip (`i2cdetect`, `/sys/bus/iio`), then implement `imu.ImuReader`. |
 | 6 | The system clock may not be set at boot; the app disciplines its own clock from GPS time and uses the system clock only before the first GPS time (and only if the year >= 2024). | `timedatectl`; with `clock_source=gps` the app ignores the system clock completely. |
-| 7 | The app can open `/dev/fb0`, the evdev keyboard and the serial port (root, or groups `video`, `input`, `dialout`). | Run it as the intended user; check the postinst group list. |
+| 7 | **PARTIAL:** `/dev/fb0` and `/dev/ttyS0` exist. The `pi` account belongs to `video`, `input` and `dialout`; runtime launch and framebuffer write access remain to be tested. | Run `./run.sh`, then check that pages render and key events arrive. |
 | 8 | Data goes to `~/telemetry` of the invoking user (`SUDO_USER` under `run.sh`). How APPLaunch starts the app and as whom is unknown. | Check where files land; set `data_dir`. |
 | 9 | Packaging: scripts mirror `Python_FrameBuffer_HelloWorld` (`APP_INSTALL_DIR`, `INSTALL_PREFIX`, hard-coded launcher path). | Build with the AppBuilder pipeline and install the `.deb`. |
+
+The first on-device transfer used the wired address `192.168.1.220` (the wireless
+address was `192.168.100.65`). `python3-evdev`, PIL, NumPy, pyserial and the
+DejaVu fonts are installed. The project passes on-device unit tests on Linux
+Python 3.13.5.
 
 ## Install and run
 
@@ -80,6 +87,31 @@ python3 jp226_logger.py --gps-device /dev/ttyAMA0 --gps-baud 115200
 
 Keys: `Tab` or `]` next page, `[` previous page, `w` or `Enter` waypoint,
 `Esc` or `q` quit (see assumption 4). Pages: SPEED, GPS, LOGGER, WAYPOINT, DIAG.
+
+## Build an AppStore-compatible package
+
+The app's `app-builder.json` uses the official AppBuilder manifest schema. The
+repository workflow **Build CardputerZero DEB** runs the unit tests and packages
+the app with AppBuilder's official `pack-deb.sh`, producing an `arm64` `.deb`
+artifact without a systemd service. Use this workflow to build the Python app;
+the AppBuilder repository's online build workflow currently expects an SCons
+project.
+
+To publish a built package, clone
+[CardputerZero/AppBuilder](https://github.com/CardputerZero/AppBuilder), run
+`./czdev login` once, then from that checkout run:
+
+```bash
+./czdev bump --deb /path/to/jp226-gps-imu-logger-cp0_0.1-1_arm64.deb
+./czdev publish --deb /path/to/the-version-shown-by-bump_arm64.deb
+```
+
+The first submission requires a real-device video in the publish pull request.
+The store listing also needs real author display text, a unique four-character
+`share_code`, and actual app screenshots; the current values/screenshots are
+placeholders or desktop renders and must not be submitted. Follow
+[`app-builder.json`](app-builder.json) and the official
+[manifest requirements](https://github.com/CardputerZero/AppBuilder/blob/main/docs/APP_BUILDER_JSON.md).
 
 On a desktop (standard library only; developed and tested on Windows with Python 3.14):
 
@@ -155,13 +187,13 @@ so far; nothing has talked to a real adapter yet.
 
 The store rejects placeholders; these are deliberately still placeholders:
 
-1. `store.share_code` in `app-builder.json` is `"TODO"` (4 letters/digits, unique store-wide).
-2. `store.author.display_name` is `"TODO: real display name"`.
+1. `store.share_code` in `app-builder.json` is `"TODO"` (replace with 4 letters/digits, unique store-wide).
+2. `store.author.display_name` is `"TODO: real display name"` (replace with the real display name).
 3. `screenshots/*.png` are **renders of synthetic demo data made on a desktop**,
    not captures from a device: replace them with real device screenshots
    (re-render with `--screenshot` once the UI is tuned on the device).
 4. `packaging/icon.png` is a generated placeholder pin icon (valid 256x256, but not designed).
-5. `PKG_REVISION` (`1`) and the maintainer/contact fields of the package: set to what the AppBuilder pipeline expects.
+5. Confirm the package maintainer/contact field in `packaging/meta.env` is the contact you want displayed in package metadata.
 6. The store requires a short video of the app running on a **real device** for a first release.
 7. `permissions` is `additional_hardware: true` only. Set `imu: true` once an IMU reader exists,
    `background_service: true` if it is ever run as a service, `network: true` if the online lookup is added.

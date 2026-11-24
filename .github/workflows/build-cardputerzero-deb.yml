@@ -1,0 +1,66 @@
+name: Build CardputerZero DEB
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Cardputer-Zero/JP226-GPS-IMU-Logger-CP0/**"
+      - ".github/workflows/build-cardputerzero-deb.yml"
+  pull_request:
+    paths:
+      - "Cardputer-Zero/JP226-GPS-IMU-Logger-CP0/**"
+      - ".github/workflows/build-cardputerzero-deb.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dpkg-dev \
+            python3 \
+            python3-evdev \
+            python3-numpy \
+            python3-pil \
+            python3-serial
+
+      - name: Check and test app
+        working-directory: Cardputer-Zero/JP226-GPS-IMU-Logger-CP0
+        run: bash packaging/build.sh
+
+      - name: Package with official AppBuilder tooling
+        env:
+          APPBUILDER_DIR: ${{ runner.temp }}/CardputerZero-AppBuilder
+        run: |
+          git clone --depth 1 https://github.com/CardputerZero/AppBuilder.git "$APPBUILDER_DIR"
+          chmod +x Cardputer-Zero/JP226-GPS-IMU-Logger-CP0/packaging/stage.sh
+          "$APPBUILDER_DIR/scripts/pack-deb.sh" \
+            "$GITHUB_WORKSPACE/Cardputer-Zero/JP226-GPS-IMU-Logger-CP0" \
+            --skip-build \
+            --output-dir "$GITHUB_WORKSPACE/Cardputer-Zero/JP226-GPS-IMU-Logger-CP0/build"
+
+      - name: Verify package metadata and contents
+        working-directory: Cardputer-Zero/JP226-GPS-IMU-Logger-CP0
+        run: |
+          deb="$(find build -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -F '/usr/share/APPLaunch/applications/jp226-gps-imu-logger-cp0.desktop'
+          dpkg-deb --contents "$deb" | grep -F '/usr/share/APPLaunch/bin/jp226-gps-imu-logger-cp0'
+          if dpkg-deb --contents "$deb" | grep -Fq '/lib/systemd/system/'; then
+            echo "Unexpected systemd service in desktop app package" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jp226-gps-imu-logger-cp0-arm64
+          path: Cardputer-Zero/JP226-GPS-IMU-Logger-CP0/build/*.deb
+          if-no-files-found: error

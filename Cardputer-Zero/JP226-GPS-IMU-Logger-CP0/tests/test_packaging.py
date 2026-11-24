@@ -75,6 +75,8 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(env["PKG_VERSION"], self.manifest["version"])
         self.assertEqual(env["APP_NAME"], self.manifest["app_name"])
         self.assertTrue(env["APP_EXEC"].endswith("/" + self.manifest["bin_name"]))
+        self.assertIn("<", env["PKG_MAINTAINER"])
+        self.assertTrue(env["PKG_HOMEPAGE"].startswith("https://"))
         for dep in ("python3", "python3-pil", "python3-numpy", "python3-evdev",
                     "python3-serial"):
             self.assertIn(dep, env["PKG_DEPENDS"])
