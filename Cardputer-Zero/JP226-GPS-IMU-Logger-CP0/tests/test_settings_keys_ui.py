@@ -100,13 +100,32 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(keys.action_for("KEY_Q"), keys.QUIT)
         self.assertIsNone(keys.action_for("KEY_X"))
 
-    def test_physical_shortcut_keys(self):
-        self.assertEqual(keys.shortcut_page_for("KEY_4"), "SPEED")
-        self.assertEqual(keys.shortcut_page_for("KEY_5"), "GPS")
-        self.assertEqual(keys.shortcut_page_for("KEY_6"), "IMU")
-        self.assertEqual(keys.shortcut_page_for("KEY_7"), "WAYPOINT")
-        self.assertEqual(keys.shortcut_page_for("KEY_8"), "OBD SCAN")
-        self.assertIsNone(keys.shortcut_page_for("KEY_3"))
+    def test_number_keys_are_contextual_and_never_change_pages(self):
+        self.assertIsNone(keys.action_for("KEY_4"))
+        self.assertEqual(
+            [keys.page_action_for("OBD", "KEY_{}".format(n)) for n in range(4, 9)],
+            [keys.CHANGE_MAKE, keys.CHANGE_MODEL, keys.CHANGE_YEAR,
+             keys.SAVE_PROFILE, keys.OBD_CONNECT])
+        self.assertEqual(keys.page_action_for("SPEED", "KEY_7"), keys.WAYPOINT)
+        self.assertEqual(keys.page_action_for("SETUP", "KEY_7"), keys.SAVE_SETUP)
+        self.assertIsNone(keys.page_action_for("SPEED", "KEY_4"))
+        self.assertIsNone(keys.page_action_for("DINO DASH", "KEY_7"))
+        page_changes = {keys.NEXT_PAGE, keys.PREV_PAGE}
+        for page in ui.PAGES:
+            for _name, _label, action, kind in keys.page_actions(page):
+                self.assertNotIn(action, page_changes)
+                self.assertIn(kind, (keys.KIND_EDIT, keys.KIND_SAVE,
+                                     keys.KIND_UNAVAILABLE))
+
+    def test_every_page_has_an_action_table_and_footer(self):
+        self.assertEqual(set(keys.PAGE_ACTIONS), set(ui.PAGES))
+        self.assertEqual(
+            ui.footer_items(ui.OBD_PAGE_INDEX),
+            [("Z/C PAGE", keys.KIND_NAV), ("4 MAKE", keys.KIND_EDIT),
+             ("5 MODEL", keys.KIND_EDIT), ("6 YEAR", keys.KIND_EDIT),
+             ("7 SAVE", keys.KIND_SAVE), ("8 LINK", keys.KIND_UNAVAILABLE)])
+        self.assertEqual(ui.footer_items(ui.DINO_PAGE_INDEX),
+                         [("Z/C PAGE", keys.KIND_NAV)])
 
     def test_all_mapped_names_are_valid_linux_key_names(self):
         for name in (hardware.KEYS_NEXT_PAGE + hardware.KEYS_PREV_PAGE +
@@ -114,7 +133,7 @@ class KeyTests(unittest.TestCase):
                      hardware.KEYS_SETTING_PREV + hardware.KEYS_SETTING_NEXT +
                      hardware.KEYS_SETTING_DEC + hardware.KEYS_SETTING_INC +
                      hardware.KEYS_DINO_JUMP + hardware.KEYS_DINO_TOGGLE +
-                     hardware.KEYS_SHORTCUTS):
+                     hardware.KEYS_PAGE_ACTIONS):
             self.assertRegex(name, r"^KEY_[A-Z0-9]+$")
 
 

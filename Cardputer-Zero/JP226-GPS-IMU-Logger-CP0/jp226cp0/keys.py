@@ -5,7 +5,7 @@ evdev reader is UNVERIFIED on the CardputerZero (the matrix keyboard's key codes
 are not known - see hardware.py; the DIAG page shows the last raw key name).
 """
 
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from . import hardware
 
@@ -14,12 +14,40 @@ PREV_PAGE = "prev"
 WAYPOINT = "waypoint"
 QUIT = "quit"
 
-SHORTCUT_PAGES = {
-    "KEY_4": "SPEED",
-    "KEY_5": "GPS",
-    "KEY_6": "IMU",
-    "KEY_7": "WAYPOINT",
-    "KEY_8": "OBD SCAN",
+# Number keys 4-8 act on the current page; they never change pages.
+CHANGE_MAKE = "change_make"
+CHANGE_MODEL = "change_model"
+CHANGE_YEAR = "change_year"
+SAVE_PROFILE = "save_profile"
+OBD_CONNECT = "obd_connect"
+SAVE_SETUP = "save_setup"
+
+# Footer colour groups (see ui._KIND_COLOURS).
+KIND_NAV = "nav"
+KIND_EDIT = "edit"
+KIND_SAVE = "save"
+KIND_UNAVAILABLE = "unavailable"
+
+_WAYPOINT_ACTIONS = (("KEY_7", "WP", WAYPOINT, KIND_SAVE),)
+
+# page name -> ((key name, short label, action, kind), ...)
+PAGE_ACTIONS: Dict[str, Tuple[Tuple[str, str, str, str], ...]] = {
+    "SPEED": _WAYPOINT_ACTIONS,
+    "GPS": _WAYPOINT_ACTIONS,
+    "IMU": _WAYPOINT_ACTIONS,
+    "LOGGER": _WAYPOINT_ACTIONS,
+    "WAYPOINT": _WAYPOINT_ACTIONS,
+    "SETUP": (("KEY_7", "SAVE", SAVE_SETUP, KIND_SAVE),),
+    "OBD": (
+        ("KEY_4", "MAKE", CHANGE_MAKE, KIND_EDIT),
+        ("KEY_5", "MODEL", CHANGE_MODEL, KIND_EDIT),
+        ("KEY_6", "YEAR", CHANGE_YEAR, KIND_EDIT),
+        ("KEY_7", "SAVE", SAVE_PROFILE, KIND_SAVE),
+        ("KEY_8", "LINK", OBD_CONNECT, KIND_UNAVAILABLE),
+    ),
+    "DIAG": _WAYPOINT_ACTIONS,
+    "FOSSIL RECORD": _WAYPOINT_ACTIONS,
+    "DINO DASH": (),
 }
 
 
@@ -35,8 +63,16 @@ def action_for(key_name: str) -> Optional[str]:
     return None
 
 
-def shortcut_page_for(key_name: str) -> Optional[str]:
-    return SHORTCUT_PAGES.get(key_name)
+def page_actions(page: str) -> Tuple[Tuple[str, str, str, str], ...]:
+    return PAGE_ACTIONS.get(page, ())
+
+
+def page_action_for(page: str, key_name: str) -> Optional[str]:
+    """Contextual number-key action on this page, or None (never a page jump)."""
+    for name, _label, action, _kind in page_actions(page):
+        if name == key_name:
+            return action
+    return None
 
 
 class EvdevKeys:

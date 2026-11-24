@@ -3,20 +3,17 @@
 import os
 from typing import Dict, Optional
 
-from . import APP_TITLE, hardware
+from . import APP_TITLE, hardware, keys
 
-PAGES = ("SPEED", "GPS", "IMU", "LOGGER", "WAYPOINT", "SETUP", "OBD SCAN",
+PAGES = ("SPEED", "GPS", "IMU", "LOGGER", "WAYPOINT", "SETUP", "OBD",
          "DIAG", "FOSSIL RECORD", "DINO DASH")
 SETTINGS_PAGE_INDEX = PAGES.index("SETUP")
-OBD_PAGE_INDEX = PAGES.index("OBD SCAN")
+OBD_PAGE_INDEX = PAGES.index("OBD")
 DINO_PAGE_INDEX = PAGES.index("DINO DASH")
-SHORTCUT_LABELS = (
-    ("4", "SPD", "SPEED"),
-    ("5", "GPS", "GPS"),
-    ("6", "IMU", "IMU"),
-    ("7", "WP", "WAYPOINT"),
-    ("8", "OBD", "OBD SCAN"),
-)
+
+# Values a future OBD connection could show. None are connected or logged.
+PLANNED_OBD_READINGS = ("RPM", "LOAD", "COOLANT", "FUEL")
+PLANNED_VEHICLE_READINGS = ("TPMS PSI/TEMP", "12V", "IGN TIMES")
 
 _BG = (8, 10, 16)
 _PANEL = (22, 27, 40)
@@ -26,6 +23,11 @@ _GOOD = (80, 220, 120)
 _WARN = (255, 190, 60)
 _BAD = (255, 90, 90)
 _ACCENT = (90, 170, 255)
+
+_KIND_COLOURS = {
+    keys.KIND_NAV: _ACCENT, keys.KIND_EDIT: _WARN,
+    keys.KIND_SAVE: _GOOD, keys.KIND_UNAVAILABLE: _DIM,
+}
 
 _STATE_COLOURS = {
     "MOVING": _GOOD, "STOPPED_15M": _ACCENT, "STOPPED_HOURLY": _ACCENT,
@@ -111,14 +113,21 @@ def _header(draw, f, title, model, width):
     draw.ellipse([width - 14, 6, width - 6, 14], fill=dot)
 
 
+def footer_items(index: int):
+    """(text, kind) footer labels: page navigation, then this page's actions."""
+    items = [("Z/C PAGE", keys.KIND_NAV)]
+    for key_name, label, _action, kind in keys.page_actions(PAGES[index % len(PAGES)]):
+        items.append(("{} {}".format(key_name[len("KEY_"):], label), kind))
+    return items
+
+
 def _footer(draw, f, index, width, height):
     draw.rectangle([0, height - 14, width, height], fill=_PANEL)
-    centers = (49, 105, 161, 217, 273)
-    for (number, label, page), center in zip(SHORTCUT_LABELS, centers):
-        x = round(center * width / hardware.SCREEN_WIDTH)
-        colour = _ACCENT if PAGES.index(page) == index else _TEXT
-        _text(draw, x, height - 12, "{} {}".format(number, label),
-              f.tiny, colour, "c")
+    items = footer_items(index)
+    slot = width / max(len(items), 2)
+    for i, (text, kind) in enumerate(items):
+        x = round(slot * (i + 0.5))
+        _text(draw, x, height - 12, text, f.tiny, _KIND_COLOURS[kind], "c")
 
 
 def _rows(draw, f, rows, top=28, step=21):
@@ -243,22 +252,25 @@ def _page_setup(draw, f, m, w, h):
 
 
 def _page_obd(draw, f, m, w, h):
-    _text(draw, 8, 24, "F/X select  W/E change  ENTER scan", f.small, _DIM)
-    for index, (label, value) in enumerate(m["obd_settings"]):
-        y = 40 + index * 20
+    _text(draw, 8, 24, "F/X select  W/E change  4/5/6 next", f.small, _DIM)
+    for index, (label, value) in enumerate(m["obd_profile"]):
+        y = 41 + index * 18
         selected = index == m["obd_selection"]
         if selected:
-            draw.rectangle([4, y - 1, w - 4, y + 20], fill=_PANEL)
+            draw.rectangle([4, y - 1, w - 4, y + 17], fill=_PANEL)
         colour = _ACCENT if selected else _TEXT
         _text(draw, 10, y, label, f.small, colour)
         _text(draw, w - 10, y, value, f.row, colour, "r")
-    status_colour = (_GOOD if m["obd_scan_status"] == "COMPLETE" else
-                     _BAD if "ERROR" in m["obd_scan_status"] else _WARN)
-    _text(draw, 8, 108, m["obd_scan_status"], f.row, status_colour)
-    _text(draw, 8, 126, m["obd_scan_summary"] or
-          m["obd_scan_progress"] or "Read-only OBD-II; no ECU writes",
-          f.small, _TEXT)
-    _text(draw, 8, 144, "Config: " + m["obd_config_path"][-34:], f.tiny, _DIM)
+    message = m["obd_message"]
+    colour = (_GOOD if "SAVED" in message and "UNSAVED" not in message else
+              _WARN if "UNSAVED" in message else _DIM)
+    _text(draw, 8, 96, "LINK " + m["obd_status"], f.small, _DIM)
+    _text(draw, w - 8, 96, message, f.small, colour, "r")
+    _text(draw, 8, 115, "PLANNED - NOT CONNECTED OR LOGGED", f.tiny, _WARN)
+    _text(draw, 8, 127, "OBD-II: " + "  ".join(PLANNED_OBD_READINGS),
+          f.tiny, _TEXT)
+    _text(draw, 8, 139, "VEHICLE: " + "  ".join(PLANNED_VEHICLE_READINGS) +
+          "  (varies by vehicle)", f.tiny, _TEXT)
 
 
 def _page_diag(draw, f, m, w, h):
@@ -276,7 +288,7 @@ def _page_diag(draw, f, m, w, h):
          ("CAMERA", "READY" if m["camera_available"] else "NOT FOUND", _TEXT)),
         (("CLOCK", "{}{}".format(m["clock_source"],
                                   " GPS" if m["clock_gps_synced"] else ""), _TEXT),
-         ("OBD", m["obd_scan_status"], _TEXT)),
+         ("OBD", m["obd_status"], _DIM)),
     ], top=29, step=21)
     if m["imu_error"]:
         _text(draw, 8, 144, m["imu_error"][:44], f.tiny, _WARN)

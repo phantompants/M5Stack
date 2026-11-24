@@ -100,7 +100,7 @@ class PackagingTests(unittest.TestCase):
             stage = handle.read()
         self.assertIn("jp226cp0/*.py", stage)
         self.assertIn("jp226_logger.py", stage)
-        self.assertIn("obd_scan.cfg.example", stage)
+        self.assertNotIn("obd_scan", stage)
 
 
 if __name__ == "__main__":

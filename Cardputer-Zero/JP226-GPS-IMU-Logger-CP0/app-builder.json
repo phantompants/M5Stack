@@ -1,12 +1,12 @@
 {
   "package_name": "jp226-gps-imu-logger-cp0",
-  "version": "2026.11.01",
+  "version": "2026.11.02",
   "app_name": "JP226 GPS-IMU Logger",
   "bin_name": "jp226-gps-imu-logger-cp0",
   "description": "GPS speed, motion-state logger and waypoints for vehicles (port of the JP226 ESP32 logger)",
   "store": {
-    "summary": "GPS logger with IMU, waypoint photos, setup and read-only OBD scan",
-    "description": "Logs GPS tracks to daily CSV files using the JP226 ESP32 logger's timing and unchanged 63-column telemetry schema. Reads the CardputerZero BMI270 IMU, captures camera photos for waypoints even without a GPS fix, and records road, surface, tyre pressure, suspension and load settings. Includes a read-only OBD-II scanner with common adapter links and automatic protocol detection, plus a two-dinosaur Dino Dash.",
+    "summary": "GPS logger with IMU, waypoint photos, vehicle setup and profile",
+    "description": "Logs GPS tracks to daily CSV files using the JP226 ESP32 logger's timing and unchanged 63-column telemetry schema. Reads the CardputerZero BMI270 IMU, captures camera photos for waypoints even without a GPS fix, and records road, surface, tyre pressure, suspension and load settings. Stores a make/model/year vehicle profile for planned OBD-II readings; OBD connection and OBD logging are not implemented yet. Includes a two-dinosaur Dino Dash.",
     "categories": ["Hardware & IoT", "System Tools"],
     "screenshots": [
       "screenshots/1_speed.png",

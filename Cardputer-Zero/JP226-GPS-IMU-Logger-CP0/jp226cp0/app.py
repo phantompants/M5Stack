@@ -65,9 +65,10 @@ class LoggerApp:
             dino_best = 0
         self.dino = DinoGame(dino_best)
         self.obd_selection = 0
-        self.obd_profile = vehicle_settings.load_profile(
-            self.store.get("vehicle_profile"))
-        self.obd_message = "SELECT MAKE / MODEL / YEAR"
+        saved_profile = self.store.get("vehicle_profile")
+        self.obd_profile = vehicle_settings.load_profile(saved_profile)
+        self.obd_message = ("SAVED PROFILE LOADED" if isinstance(saved_profile, dict)
+                            else "SELECT PROFILE")
         self.obd_status = "NOT CONNECTED"
         self.waypoint_message = ""
         self.last_key = ""
@@ -194,7 +195,13 @@ class LoggerApp:
     def adjust_obd_profile(self, delta: int) -> None:
         field = vehicle_settings.PROFILE_FIELD_LABELS[self.obd_selection][0]
         if vehicle_settings.adjust_profile(self.obd_profile, field, delta):
-            self.obd_message = "UNSAVED PROFILE CHANGES"
+            self.obd_message = "UNSAVED CHANGES"
+
+    def change_obd_profile_field(self, field: str, delta: int = 1) -> None:
+        """Number-key shortcut: select this profile field and step its value."""
+        fields = [name for name, _label in vehicle_settings.PROFILE_FIELD_LABELS]
+        self.obd_selection = fields.index(field)
+        self.adjust_obd_profile(delta)
 
     def save_obd_profile(self) -> None:
         self.store.put(vehicle_profile=dict(self.obd_profile))
@@ -202,7 +209,7 @@ class LoggerApp:
 
     def connect_obd(self) -> None:
         self.obd_status = "NOT IMPLEMENTED"
-        self.obd_message = "OBD CONNECTION NOT IMPLEMENTED"
+        self.obd_message = "NO OBD LINK YET"
 
     def close(self) -> None:
         self.telemetry.close()

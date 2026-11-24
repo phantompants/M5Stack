@@ -103,6 +103,24 @@ def run_replay_mode(args, settings) -> int:
     return 0
 
 
+def _run_page_action(app: LoggerApp, action: str, now: int) -> None:
+    """Number keys 4-8: act within the current page (they never change page)."""
+    if action == keys.WAYPOINT:
+        app.create_waypoint(now)
+    elif action == keys.SAVE_SETUP:
+        app.store.put(vehicle_setup=app.vehicle)
+    elif action == keys.CHANGE_MAKE:
+        app.change_obd_profile_field("make")
+    elif action == keys.CHANGE_MODEL:
+        app.change_obd_profile_field("model")
+    elif action == keys.CHANGE_YEAR:
+        app.change_obd_profile_field("year")
+    elif action == keys.SAVE_PROFILE:
+        app.save_obd_profile()
+    elif action == keys.OBD_CONNECT:
+        app.connect_obd()
+
+
 def run_live(args, settings) -> int:
     from .gps_source import SerialGpsReader
 
@@ -162,13 +180,9 @@ def run_live(args, settings) -> int:
             if key_reader is not None:
                 for name in key_reader.poll():
                     app.last_key = name
-                    shortcut_page = keys.shortcut_page_for(name)
-                    if shortcut_page is not None:
-                        page = ui.PAGES.index(shortcut_page)
-                        if shortcut_page == "WAYPOINT":
-                            app.create_waypoint(now)
-                        elif shortcut_page == "OBD SCAN":
-                            app.start_obd_scan()
+                    page_action = keys.page_action_for(ui.PAGES[page], name)
+                    if page_action is not None:
+                        _run_page_action(app, page_action, now)
                         continue
                     action = keys.action_for(name)
                     if action == keys.NEXT_PAGE:
@@ -189,16 +203,16 @@ def run_live(args, settings) -> int:
                         app.adjust_vehicle_setting(1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_PREV):
-                        app.select_obd_option(-1)
+                        app.select_obd_profile_field(-1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_NEXT):
-                        app.select_obd_option(1)
+                        app.select_obd_profile_field(1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_DEC):
-                        app.adjust_obd_option(-1)
+                        app.adjust_obd_profile(-1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_INC):
-                        app.adjust_obd_option(1)
+                        app.adjust_obd_profile(1)
                     elif (page == ui.DINO_PAGE_INDEX and
                           name in hardware.KEYS_DINO_JUMP):
                         app.press_dino(now)
@@ -211,7 +225,7 @@ def run_live(args, settings) -> int:
                         elif page == ui.DINO_PAGE_INDEX:
                             app.press_dino(now)
                         elif page == ui.OBD_PAGE_INDEX:
-                            app.start_obd_scan()
+                            app.save_obd_profile()
                         else:
                             app.create_waypoint(now)
                     elif action == keys.QUIT:

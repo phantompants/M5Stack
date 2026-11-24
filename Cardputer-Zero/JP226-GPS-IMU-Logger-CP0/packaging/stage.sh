@@ -7,7 +7,6 @@ for f in jp226cp0/*.py; do
 done
 install -D -m 0644 sample_data/demo_drive.nmea "$STAGE$APP_INSTALL_DIR/sample_data/demo_drive.nmea"
 install -D -m 0644 logger.cfg.example "$STAGE$APP_INSTALL_DIR/logger.cfg.example"
-install -D -m 0644 obd_scan.cfg.example "$STAGE$APP_INSTALL_DIR/obd_scan.cfg.example"
 if [ -f build_stamp.json ]; then
   install -D -m 0644 build_stamp.json "$STAGE$APP_INSTALL_DIR/build_stamp.json"
 fi

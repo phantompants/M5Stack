@@ -40,6 +40,8 @@ SCREEN_HEIGHT = 170
 
 # Keyboard key names are Linux input-event-codes names. The left/right arrows
 # are page-navigation aliases; settings and game controls are page-specific.
+# Number keys 4-8 are contextual page actions (keys.PAGE_ACTIONS), never page
+# shortcuts.
 # --------------------------------------------------------------------------
 KEYS_NEXT_PAGE = ("KEY_TAB", "KEY_RIGHTBRACE", "KEY_RIGHT", "KEY_C")
 KEYS_PREV_PAGE = ("KEY_LEFTBRACE", "KEY_LEFT", "KEY_Z")
@@ -51,7 +53,7 @@ KEYS_SETTING_DEC = ("KEY_A", "KEY_MINUS", "KEY_W")
 KEYS_SETTING_INC = ("KEY_D", "KEY_EQUAL", "KEY_E")
 KEYS_DINO_JUMP = ("KEY_SPACE", "KEY_ENTER", "KEY_KPENTER", "KEY_SEMICOLON")
 KEYS_DINO_TOGGLE = ("KEY_B",)
-KEYS_SHORTCUTS = ("KEY_4", "KEY_5", "KEY_6", "KEY_7", "KEY_8")
+KEYS_PAGE_ACTIONS = ("KEY_4", "KEY_5", "KEY_6", "KEY_7", "KEY_8")
 
 # --------------------------------------------------------------------------
 # Real-time clock / system clock. The
