@@ -1,9 +1,12 @@
+import glob
 import json
 import os
 import tempfile
+import time
 import unittest
 
 from jp226obd import compatibility, obd_pids, scanner
+from jp226obd.app import ObdScannerApp
 from jp226obd.elm327 import Elm327
 from jp226obd.fake_elm import FakeElm
 from jp226obd.live import LiveReader
@@ -107,6 +110,26 @@ class ScannerAndCompatibilityTests(unittest.TestCase):
         self.assertIn("PEDAL_D", snap["values"])
         self.assertIn("ACT_TRQ", snap["values"])
         self.assertIn("HV_SOC", snap["values"])
+
+    def test_live_session_writes_jsonl_log(self):
+        tmp = tempfile.mkdtemp()
+        app = ObdScannerApp(data_dir=tmp)
+        try:
+            app.link = "demo"
+            app.demo_profile = "ev"
+            app.toggle_live()
+            deadline = time.monotonic() + 3.0
+            while app.live_snapshot.get("samples", 0) < 2 and time.monotonic() < deadline:
+                time.sleep(0.05)
+            app.stop_live()
+            logs = glob.glob(os.path.join(tmp, "obd_live_*.jsonl"))
+            self.assertEqual(len(logs), 1)
+            with open(logs[0], encoding="utf-8") as fh:
+                recs = [json.loads(line) for line in fh]
+            self.assertEqual(recs[0]["step"], "live_start")
+            self.assertTrue(any(r["step"] == "live_sample" for r in recs))
+        finally:
+            app.close()
 
 
 if __name__ == "__main__":

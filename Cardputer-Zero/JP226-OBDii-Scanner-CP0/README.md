@@ -36,9 +36,10 @@ what usable telemetry a vehicle exposes for:
 - **Live Monitor page:** polls the recommended fast PIDs in real time and
   displays live Speed, RPM, Pedal/Throttle, Torque/Load, SoC/Voltage, Temp,
   and actual refresh rate (`Hz`).
-- **Portable outputs:** saves both raw audit logs (`obd_scan_<UTC>.jsonl`) and
-  structured capability profiles (`obd_profile_<VIN>_<UTC>.json`) under
-  `~/telemetry/obd_scanner/`.
+- **Portable outputs:** saves every raw request/reply (`obd_scan_<UTC>.jsonl`),
+  structured capability profiles (`obd_profile_<VIN>_<UTC>.json`), and live
+  polling traces (`obd_live_<UTC>.jsonl`) for later AI or offline analysis under
+  `~/telemetry/obd_scanner/` (or `~/obd_scanner/` if `~/telemetry` is not writable).
 
 ## Controls (CardputerZero 320x170 LCD + evdev)
 

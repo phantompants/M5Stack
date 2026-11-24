@@ -240,11 +240,12 @@ class ObdScannerApp:
     def _run_scan(self, cfg: Dict[str, str]) -> None:
         transport = None
         log = None
+        sc = None
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         try:
             transport = scanner.open_link(cfg)
             self.link_name = transport.name
             os.makedirs(cfg["out_dir"], exist_ok=True)
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             log_path = os.path.join(cfg["out_dir"], "obd_scan_{}.jsonl".format(stamp))
             log = scanner.ScanLog(log_path)
             log.write({"step": "start", "link": transport.name, "config": cfg})
@@ -282,17 +283,40 @@ class ObdScannerApp:
             self.status = "ERROR"
             self.error = str(exc)
             self.progress = str(exc)[:40]
+            self._save_partial_scan(sc, log, transport, cfg, stamp, self.error)
             print("OBD scan error: {}".format(exc), file=sys.stderr)
         except Exception as exc:
             self.status = "ERROR"
             self.error = "{}: {}".format(type(exc).__name__, exc)
             self.progress = self.error[:40]
+            self._save_partial_scan(sc, log, transport, cfg, stamp, self.error)
             print("OBD scan failed: {}".format(exc), file=sys.stderr)
         finally:
             if log is not None:
                 log.close()
             if transport is not None:
                 transport.close()
+
+    def _save_partial_scan(self, sc, log, transport, cfg: Dict[str, str],
+                           stamp: str, err: str) -> None:
+        if sc is None:
+            return
+        self.summary = sc.summary
+        if log is not None:
+            try:
+                log.write({"step": "summary", "error": err, **sc.summary})
+            except Exception:
+                pass
+        try:
+            link_name = transport.name if transport is not None else cfg.get("link", "?")
+            prof_path, profile = scanner.save_profile(
+                sc.summary, link_name, cfg["out_dir"], stamp
+            )
+            self.profile = profile
+            self.profile_file = os.path.basename(prof_path)
+            self.store.put(last_profile_path=prof_path)
+        except Exception:
+            pass
 
     def _set_progress(self, text: str) -> None:
         self.status = "SCANNING"
@@ -320,6 +344,7 @@ class ObdScannerApp:
 
     def _run_live(self, cfg: Dict[str, str]) -> None:
         transport = None
+        live_log = None
         try:
             transport = scanner.open_link(cfg)
             elm = Elm327(transport)
@@ -330,23 +355,44 @@ class ObdScannerApp:
                     "samples": 0, "error": "No ECU answered 0100",
                 }
                 return
+            os.makedirs(cfg["out_dir"], exist_ok=True)
+            stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            live_log = scanner.ScanLog(
+                os.path.join(cfg["out_dir"], "obd_live_{}.jsonl".format(stamp))
+            )
             ev_fit = self.profile.get("ev_sound_fit", {})
             rec_pids = ev_fit.get("recommended_fast_pids") if isinstance(ev_fit, dict) else None
             pids = [int(p, 16) for p in rec_pids] if rec_pids else list(DEFAULT_LIVE_PIDS)
             multi = bool(ev_fit.get("multi_pid_supported")) if isinstance(ev_fit, dict) else False
+            live_log.write({
+                "step": "live_start",
+                "link": transport.name,
+                "protocol": init.get("protocol"),
+                "pids": ["{:02X}".format(p) for p in pids],
+                "multi_pid": multi,
+            })
             reader = LiveReader(elm, pids, multi_pid=multi)
             self._live_reader = reader
             while not self._live_cancel.is_set():
                 reader.poll_once()
-                self.live_snapshot = reader.snapshot()
+                snap = reader.snapshot()
+                self.live_snapshot = snap
+                live_log.write({"step": "live_sample", **snap})
                 time.sleep(0.02)
         except Exception as exc:
             self.live_snapshot = {
                 "values": {}, "hz": 0.0, "latency_ms": 0.0,
                 "samples": 0, "error": str(exc)[:38],
             }
+            if live_log is not None:
+                try:
+                    live_log.write({"step": "live_error", "error": str(exc)})
+                except Exception:
+                    pass
         finally:
             self.live_active = False
+            if live_log is not None:
+                live_log.close()
             if transport is not None:
                 transport.close()
 
