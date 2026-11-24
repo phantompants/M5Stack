@@ -56,6 +56,7 @@ class AppAndUiTests(unittest.TestCase):
         self.assertEqual(keys.page_action_for("SHARE", "KEY_4"), keys.TOGGLE_WEB)
         self.assertEqual(keys.page_action_for("SHARE", "KEY_5"), keys.CYCLE_WEB_PORT)
         self.assertEqual(len(ui.footer_slots(0)), 5)
+        self.assertEqual([ui.footer_slot_x(i, 320) for i in range(5)], [53, 107, 160, 213, 267])
 
     def test_page_action_dispatch(self):
         tmp = tempfile.mkdtemp()

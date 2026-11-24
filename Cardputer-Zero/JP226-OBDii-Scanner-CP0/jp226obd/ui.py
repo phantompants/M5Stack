@@ -134,11 +134,15 @@ def footer_slots(index: int) -> List[Tuple[int, str, str]]:
     return slots
 
 
+def footer_slot_x(col: int, width: int = hardware.SCREEN_WIDTH) -> int:
+    """Physical x-center for keys 4-8 when x=0 is key 3 center and x=width is key 9 center."""
+    return round((col + 1) * width / 6.0)
+
+
 def _footer(draw, f: _Fonts, index: int, width: int, height: int) -> None:
     draw.rectangle([0, height - 15, width, height], fill=_PANEL)
-    slot_w = width / len(hardware.KEYS_PAGE_ACTIONS)
     for col, text, kind in footer_slots(index):
-        x = round(slot_w * (col + 0.5))
+        x = footer_slot_x(col, width)
         _text(draw, x, height - 13, text, f.tiny, _KIND_COLOURS[kind], "c")
 
 
