@@ -5,6 +5,8 @@ import os
 import struct
 import unittest
 
+from jp226cp0 import __version__
+
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATEGORIES = {"System Tools", "Development", "Hardware & IoT", "Security",
               "Radio & Comms", "AI", "Creative & Office", "Media", "Games",
@@ -41,7 +43,8 @@ class PackagingTests(unittest.TestCase):
         m = self.manifest
         self.assertEqual(m["package_name"], "jp226-gps-imu-logger-cp0")
         self.assertEqual(m["app_name"], "JP226 GPS-IMU Logger")
-        self.assertEqual(m["version"], "0.3")
+        self.assertRegex(m["version"], r"^\d{4}\.(0[1-9]|1[0-2])\.\d{2}$")
+        self.assertEqual(m["version"], __version__)
         self.assertTrue(m["bin_name"])
         self.assertRegex(m["package_name"], r"^[a-z0-9][a-z0-9.+-]*$")
 
@@ -51,7 +54,8 @@ class PackagingTests(unittest.TestCase):
         self.assertTrue(1 <= len(s["categories"]) <= 2)
         self.assertTrue(set(s["categories"]) <= CATEGORIES)
         self.assertEqual(s["license"], "MIT")
-        self.assertEqual(s["author"]["github"], "phantompants")
+        self.assertEqual(s["author"]["github"], "jp226prints")
+        self.assertEqual(s["author"]["display_name"], "JP226 Prints")
         self.assertEqual(set(s["permissions"]), PERMISSIONS)
         self.assertTrue(all(isinstance(v, bool) for v in s["permissions"].values()))
         self.assertEqual({k for k, v in s["permissions"].items() if v},
@@ -75,7 +79,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(env["PKG_VERSION"], self.manifest["version"])
         self.assertEqual(env["APP_NAME"], self.manifest["app_name"])
         self.assertTrue(env["APP_EXEC"].endswith("/" + self.manifest["bin_name"]))
-        self.assertIn("<", env["PKG_MAINTAINER"])
+        self.assertEqual(env["PKG_MAINTAINER"], "JP226 Prints <github@jp226prints.au>")
         self.assertTrue(env["PKG_HOMEPAGE"].startswith("https://"))
         for dep in ("python3", "python3-pil", "python3-numpy", "python3-evdev",
                     "python3-serial"):

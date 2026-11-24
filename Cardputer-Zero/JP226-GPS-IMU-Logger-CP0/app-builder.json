@@ -1,6 +1,6 @@
 {
   "package_name": "jp226-gps-imu-logger-cp0",
-  "version": "0.3",
+  "version": "2026.11.01",
   "app_name": "JP226 GPS-IMU Logger",
   "bin_name": "jp226-gps-imu-logger-cp0",
   "description": "GPS speed, motion-state logger and waypoints for vehicles (port of the JP226 ESP32 logger)",
@@ -17,7 +17,7 @@
     "icon": "packaging/icon.png",
     "license": "MIT",
     "source_repo": "https://github.com/phantompants/M5Stack/tree/main/Cardputer-Zero/JP226-GPS-IMU-Logger-CP0",
-    "author": { "github": "phantompants", "display_name": "TODO: real display name" },
+    "author": { "github": "jp226prints", "display_name": "JP226 Prints" },
     "share_code": "TODO",
     "permissions": {
       "camera": true,

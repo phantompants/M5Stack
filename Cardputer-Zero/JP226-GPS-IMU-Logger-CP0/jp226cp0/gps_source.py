@@ -41,15 +41,21 @@ def count_valid_sentences(data: bytes) -> int:
 
 def candidate_devices(configured: str = "",
                       candidates=hardware.GPS_SERIAL_CANDIDATES,
-                      exists: Callable[[str], bool] = os.path.exists) -> List[str]:
+                      exists: Callable[[str], bool] = os.path.exists,
+                      realpath: Callable[[str], str] = os.path.realpath
+                      ) -> List[str]:
     """Configured device first (even if it does not exist yet), then the
-    existing candidates, without duplicates."""
+    existing candidates, without aliases of the same serial device."""
     result: List[str] = []
+    seen = set()
     if configured:
         result.append(configured)
+        seen.add(realpath(configured))
     for dev in candidates:
-        if dev not in result and exists(dev):
+        canonical = realpath(dev)
+        if canonical not in seen and exists(dev):
             result.append(dev)
+            seen.add(canonical)
     return result
 
 

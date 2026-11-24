@@ -8,8 +8,10 @@ import os
 # --------------------------------------------------------------------------
 GPS_SERIAL_CANDIDATES = (
     "/dev/serial0",
+    "/dev/ttyAMA1",
     "/dev/ttyAMA0",
     "/dev/ttyS0",
+    "/dev/ttyS1",
     "/dev/ttyUSB0",
     "/dev/ttyACM0",
 )
@@ -49,6 +51,7 @@ KEYS_SETTING_DEC = ("KEY_A", "KEY_MINUS", "KEY_W")
 KEYS_SETTING_INC = ("KEY_D", "KEY_EQUAL", "KEY_E")
 KEYS_DINO_JUMP = ("KEY_SPACE", "KEY_ENTER", "KEY_KPENTER", "KEY_SEMICOLON")
 KEYS_DINO_TOGGLE = ("KEY_B",)
+KEYS_SHORTCUTS = ("KEY_4", "KEY_5", "KEY_6", "KEY_7", "KEY_8")
 
 # --------------------------------------------------------------------------
 # Real-time clock / system clock. The

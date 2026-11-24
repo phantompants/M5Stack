@@ -100,12 +100,21 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(keys.action_for("KEY_Q"), keys.QUIT)
         self.assertIsNone(keys.action_for("KEY_X"))
 
+    def test_physical_shortcut_keys(self):
+        self.assertEqual(keys.shortcut_page_for("KEY_4"), "SPEED")
+        self.assertEqual(keys.shortcut_page_for("KEY_5"), "GPS")
+        self.assertEqual(keys.shortcut_page_for("KEY_6"), "IMU")
+        self.assertEqual(keys.shortcut_page_for("KEY_7"), "WAYPOINT")
+        self.assertEqual(keys.shortcut_page_for("KEY_8"), "OBD SCAN")
+        self.assertIsNone(keys.shortcut_page_for("KEY_3"))
+
     def test_all_mapped_names_are_valid_linux_key_names(self):
         for name in (hardware.KEYS_NEXT_PAGE + hardware.KEYS_PREV_PAGE +
                      hardware.KEYS_WAYPOINT + hardware.KEYS_QUIT +
                      hardware.KEYS_SETTING_PREV + hardware.KEYS_SETTING_NEXT +
                      hardware.KEYS_SETTING_DEC + hardware.KEYS_SETTING_INC +
-                     hardware.KEYS_DINO_JUMP + hardware.KEYS_DINO_TOGGLE):
+                     hardware.KEYS_DINO_JUMP + hardware.KEYS_DINO_TOGGLE +
+                     hardware.KEYS_SHORTCUTS):
             self.assertRegex(name, r"^KEY_[A-Z0-9]+$")
 
 

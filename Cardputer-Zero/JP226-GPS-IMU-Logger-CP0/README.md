@@ -1,4 +1,7 @@
-# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v0.3)
+# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v2026.11.01)
+
+Release versions use `yyyy.mm.nn`: the sequence starts at `01` each month and
+increments for each release in that month.
 
 A Python 3 port of the [JP226-GPS-IMU-Logger](https://github.com/phantompants/JP226-GPS-IMU-Logger)
 ESP32 firmware: it logs a vehicle's GPS track to daily CSV files, with the same
@@ -57,8 +60,11 @@ or web portal in this base.
 
 ## Hardware status and remaining checks
 
-- **GPS:** the Cap GPS receiver is visible through the Linux serial interface;
-  DIAG shows the detected port, baud and NMEA counters.
+- **GPS:** the Cap receiver uses UART1 on GPIO14/15 at 115200 baud. On the
+  current device, those pins are muxed as TXD1/RXD1, but only
+  `/dev/serial0 -> /dev/ttyS0` is exposed; `/dev/ttyAMA1` and `/dev/ttyS1`
+  are absent and the app has not confirmed NMEA traffic. The OS profile must
+  expose the Cap's UART before the app can read it.
 - **Display:** `/dev/fb0` is confirmed at 320x170, 16 bpp (RGB565).
 - **IMU:** BMI270 is read through Linux IIO at its reported acceleration and
   angular-velocity scales. If no BMI270 is present, desktop use falls back to
@@ -71,10 +77,12 @@ or web portal in this base.
   OBD SCAN, Up/Down or F/X select an option; W/E change it. On DINO DASH, B
   switches between T. rex and brontosaurus; Space/Enter/semicolon jumps.
   `W` or Enter saves a waypoint on other pages; Esc/Q quits.
+- **Number shortcuts:** 4 opens SPEED, 5 GPS, 6 IMU, 7 saves a waypoint/photo,
+  and 8 opens OBD SCAN and starts a scan. The footer labels these functions.
 - **AtomS3:** the Zero already has a BMI270, so an AtomS3 is not needed for
-  local IMU. It could provide ESP-NOW as a radio coprocessor, but that requires
-  separate bridge firmware and a confirmed Grove transport; this release does
-  not claim AtomS3-to-Linux ESP-NOW support.
+  local IMU. An optional ESP-NOW bridge is planned, but the Grove bus and
+  device protocol must be verified before adding firmware. The app must remain
+  usable when the AtomS3 is absent.
 - **LoRa antenna:** keep the external antenna attached whenever the Cap LoRa
   module is powered, even if the logger is not actively using LoRa.
 
@@ -92,12 +100,25 @@ sudo ./run.sh --headless           # log only, status line every 10 s
 python3 jp226_logger.py --gps-device /dev/ttyAMA0 --gps-baud 115200
 ```
 
-Keys: `Left`/`Right` or `z`/`c` (also `Tab`/brackets) navigate pages; `f`/`x`
-mirror Up/Down. `w`/`Enter` saves a waypoint except on SETUP, OBD SCAN and DINO
-DASH; `Esc`/`q` quits. Pages: SPEED, GPS, IMU, LOGGER, WAYPOINT, SETUP, OBD
-SCAN, DIAG, FOSSIL RECORD, and DINO DASH. The SETUP page saves vehicle settings
-immediately. A waypoint automatically captures a photo when `rpicam-still` is
-available, including a photo-only waypoint when GPS has no fix.
+Keys `4`/`5`/`6` open SPEED/GPS/IMU; `7` saves a waypoint/photo; `8` opens OBD
+SCAN and starts a scan. `Left`/`Right` or `z`/`c` (also `Tab`/brackets)
+navigate pages; `f`/`x` mirror Up/Down. `w`/`Enter` saves a waypoint except on
+SETUP, OBD SCAN and DINO DASH; `Esc`/`q` quits. Pages: SPEED, GPS, IMU, LOGGER,
+WAYPOINT, SETUP, OBD SCAN, DIAG, FOSSIL RECORD, and DINO DASH. The SETUP page
+saves vehicle settings immediately. A waypoint automatically captures a photo
+when `rpicam-still` is available, including a photo-only waypoint when GPS has
+no fix.
+
+The Cap GPS is wired to UART1 (`G14=TXD1`, `G15=RXD1`); auto-detection probes
+`/dev/ttyAMA1` and `/dev/ttyS1` as well as the usual Linux serial aliases. Check
+the OS UART profile if these nodes are missing. Useful read-only checks:
+
+```bash
+ls -l /dev/serial0 /dev/ttyAMA1 /dev/ttyAMA0 /dev/ttyS0 /dev/ttyS1 2>/dev/null
+pinctrl get 14
+pinctrl get 15
+systemctl is-active serial-getty@ttyS0.service
+```
 
 On SETUP, Up/Down selects ROAD (`PAVED`, `GRAVEL`, `DIRT`, `TRAIL`), SURFACE
 (`DRY`, `DAMP`, `WET`, `VERY WET`), FL/FR/RL/RR tyre PSI, front/rear suspension
@@ -220,14 +241,12 @@ so far; nothing has talked to a real adapter yet.
 The store rejects placeholders; these are deliberately still placeholders:
 
 1. `store.share_code` in `app-builder.json` is `"TODO"` (replace with 4 letters/digits, unique store-wide).
-2. `store.author.display_name` is `"TODO: real display name"` (replace with the real display name).
-3. `screenshots/*.png` are **renders of synthetic demo data made on a desktop**,
+2. `screenshots/*.png` are **renders of synthetic demo data made on a desktop**,
    not captures from a device: replace them with real device screenshots
    (re-render with `--screenshot` once the UI is tuned on the device).
-4. `packaging/icon.png` is a generated placeholder pin icon (valid 256x256, but not designed).
-5. Confirm the package maintainer/contact field in `packaging/meta.env` is the contact you want displayed in package metadata.
-6. The store requires a short video of the app running on a **real device** for a first release.
-7. Review `permissions` in `app-builder.json` when adding any additional
+3. `packaging/icon.png` is a generated placeholder pin icon (valid 256x256, but not designed).
+4. The store requires a short video of the app running on a **real device** for a first release.
+5. Review `permissions` in `app-builder.json` when adding any additional
    hardware or network behavior.
 
 ## Next-week test checklist

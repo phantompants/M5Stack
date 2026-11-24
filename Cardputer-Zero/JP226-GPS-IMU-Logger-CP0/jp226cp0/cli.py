@@ -162,6 +162,14 @@ def run_live(args, settings) -> int:
             if key_reader is not None:
                 for name in key_reader.poll():
                     app.last_key = name
+                    shortcut_page = keys.shortcut_page_for(name)
+                    if shortcut_page is not None:
+                        page = ui.PAGES.index(shortcut_page)
+                        if shortcut_page == "WAYPOINT":
+                            app.create_waypoint(now)
+                        elif shortcut_page == "OBD SCAN":
+                            app.start_obd_scan()
+                        continue
                     action = keys.action_for(name)
                     if action == keys.NEXT_PAGE:
                         page = (page + 1) % len(ui.PAGES)

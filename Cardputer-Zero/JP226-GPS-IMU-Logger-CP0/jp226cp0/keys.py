@@ -14,6 +14,14 @@ PREV_PAGE = "prev"
 WAYPOINT = "waypoint"
 QUIT = "quit"
 
+SHORTCUT_PAGES = {
+    "KEY_4": "SPEED",
+    "KEY_5": "GPS",
+    "KEY_6": "IMU",
+    "KEY_7": "WAYPOINT",
+    "KEY_8": "OBD SCAN",
+}
+
 
 def action_for(key_name: str) -> Optional[str]:
     if key_name in hardware.KEYS_NEXT_PAGE:
@@ -25,6 +33,10 @@ def action_for(key_name: str) -> Optional[str]:
     if key_name in hardware.KEYS_QUIT:
         return QUIT
     return None
+
+
+def shortcut_page_for(key_name: str) -> Optional[str]:
+    return SHORTCUT_PAGES.get(key_name)
 
 
 class EvdevKeys:
@@ -43,6 +55,8 @@ class EvdevKeys:
                     ecodes.KEY_RIGHT, ecodes.KEY_W, ecodes.KEY_ENTER,
                     ecodes.KEY_F, ecodes.KEY_Z, ecodes.KEY_X, ecodes.KEY_C,
                     ecodes.KEY_E, ecodes.KEY_B, ecodes.KEY_UP, ecodes.KEY_DOWN,
+                    ecodes.KEY_4, ecodes.KEY_5, ecodes.KEY_6, ecodes.KEY_7,
+                    ecodes.KEY_8,
                 )
                 if any(code in caps for code in supported):
                     self.devices.append(dev)

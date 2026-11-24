@@ -1,0 +1,7 @@
+# Required on CardputerZero for display, keys, USB serial, and BLE.
+# Core scanner logic, Wi-Fi sockets, and unit tests use Python stdlib only.
+Pillow>=10.0
+numpy>=1.24
+evdev>=1.6
+pyserial>=3.5
+bleak>=0.21

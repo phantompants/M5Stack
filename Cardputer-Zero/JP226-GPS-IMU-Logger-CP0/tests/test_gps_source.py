@@ -67,8 +67,18 @@ class HelperTests(unittest.TestCase):
 
     def test_candidate_list_matches_the_documented_assumption(self):
         self.assertEqual(hardware.GPS_SERIAL_CANDIDATES,
-                         ("/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0",
-                          "/dev/ttyUSB0", "/dev/ttyACM0"))
+                         ("/dev/serial0", "/dev/ttyAMA1", "/dev/ttyAMA0",
+                          "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyUSB0",
+                          "/dev/ttyACM0"))
+
+    def test_candidate_devices_deduplicate_serial_aliases(self):
+        aliases = {"/dev/serial0": "/dev/ttyS0"}
+        paths = ("/dev/serial0", "/dev/ttyAMA1", "/dev/ttyS0")
+        devices = candidate_devices(
+            candidates=paths,
+            exists=lambda path: True,
+            realpath=lambda path: aliases.get(path, path))
+        self.assertEqual(devices, ["/dev/serial0", "/dev/ttyAMA1"])
 
     def test_baud_list_starts_with_cap_baud_and_covers_config_h(self):
         bauds = candidate_bauds()

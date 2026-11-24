@@ -1,0 +1,25 @@
+"""Hardware defaults for the CardputerZero (320x170 RGB565 LCD + evdev keys)."""
+
+import os
+
+FRAMEBUFFER_DEVICE = os.environ.get("APPLAUNCH_LINUX_FBDEV_DEVICE", "/dev/fb0")
+SCREEN_WIDTH = 320
+SCREEN_HEIGHT = 170
+
+# Key names follow Linux input-event-codes (matching JP226-GPS-IMU-Logger-CP0).
+KEYS_NEXT_PAGE = ("KEY_TAB", "KEY_RIGHTBRACE", "KEY_RIGHT", "KEY_C")
+KEYS_PREV_PAGE = ("KEY_LEFTBRACE", "KEY_LEFT", "KEY_Z")
+KEYS_UP = ("KEY_UP", "KEY_F")
+KEYS_DOWN = ("KEY_DOWN", "KEY_X")
+KEYS_DEC = ("KEY_A", "KEY_MINUS", "KEY_W")
+KEYS_INC = ("KEY_D", "KEY_EQUAL", "KEY_E")
+KEYS_ACTION = ("KEY_ENTER", "KEY_KPENTER", "KEY_SPACE")
+KEYS_REFRESH = ("KEY_R",)
+KEYS_QUIT = ("KEY_ESC", "KEY_Q")
+
+USB_BAUD_CANDIDATES = (115200, 38400, 500000, 9600)
+WIFI_PRESETS = (
+    ("192.168.0.10", 35000),
+    ("192.168.4.1", 35000),
+    ("192.168.0.10", 23),
+)
