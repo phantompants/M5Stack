@@ -121,11 +121,21 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(set(keys.PAGE_ACTIONS), set(ui.PAGES))
         self.assertEqual(
             ui.footer_items(ui.OBD_PAGE_INDEX),
-            [("Z/C PAGE", keys.KIND_NAV), ("4 MAKE", keys.KIND_EDIT),
-             ("5 MODEL", keys.KIND_EDIT), ("6 YEAR", keys.KIND_EDIT),
-             ("7 SAVE", keys.KIND_SAVE), ("8 LINK", keys.KIND_UNAVAILABLE)])
-        self.assertEqual(ui.footer_items(ui.DINO_PAGE_INDEX),
-                         [("Z/C PAGE", keys.KIND_NAV)])
+            [("KEY_4", "MAKE", keys.KIND_EDIT), ("KEY_5", "MODEL", keys.KIND_EDIT),
+             ("KEY_6", "YEAR", keys.KIND_EDIT), ("KEY_7", "SAVE", keys.KIND_SAVE),
+             ("KEY_8", "LINK", keys.KIND_UNAVAILABLE)])
+        self.assertEqual(ui.footer_items(ui.DINO_PAGE_INDEX), [])
+
+    def test_footer_labels_sit_above_their_physical_keys(self):
+        centres = [ui.FOOTER_KEY_CENTRES["KEY_{}".format(n)] for n in range(4, 9)]
+        self.assertEqual(centres, sorted(centres))
+        self.assertEqual({b - a for a, b in zip(centres, centres[1:])}, {56})
+        for page in ui.PAGES:
+            for key_name, _label, _kind in ui.footer_items(ui.PAGES.index(page)):
+                self.assertIn(key_name, ui.FOOTER_KEY_CENTRES)
+        # Unused keys leave their slot empty: SPEED shows only 7 WP, above key 7.
+        self.assertEqual([k for k, _l, _c in ui.footer_items(ui.PAGES.index("SPEED"))],
+                         ["KEY_7"])
 
     def test_all_mapped_names_are_valid_linux_key_names(self):
         for name in (hardware.KEYS_NEXT_PAGE + hardware.KEYS_PREV_PAGE +

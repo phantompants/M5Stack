@@ -37,8 +37,8 @@ bash packaging/build.sh                             # py_compile + tests + packa
   Replay uses a virtual clock from the RMC times and must never touch a serial
   port or the framebuffer.
 - **Don't claim hardware support that hasn't been checked on the device.**
-  OBD-II, the AtomS3/ESP-NOW bridge and the online time-zone lookup are
-  placeholders or TODOs. The README marks what has been confirmed on the device.
+  OBD-II, the black box and temperature packets from the AtomS3 bridge and
+  the online time-zone lookup are placeholders or TODOs. The README marks what has been confirmed on the device.
 - **Never store Wi-Fi credentials** in settings or in the repo. Wi-Fi is set up
   in the OS.
 - Keys 4-8 are page-specific actions shown in the footer
@@ -67,7 +67,12 @@ bash packaging/build.sh                             # py_compile + tests + packa
 - `location_time.py`, `tzfallback.py`, `posixtz.py`: offline time-zone handling, no tz database
 - `ui.py` (Pillow pages), `framebuffer.py`, `keys.py` (evdev)
 - `gps_source.py`, `gps_power.py`: serial auto-detection and EXT/Grove 5V control
-- `imu.py`, `camera.py`, `webshare.py`, `export.py`, `dino.py`, `obd.py` (unused interface)
+- `bridge.py`: AtomS3 USB bridge link (ESP-NOW hub + GPS Base NMEA on `/dev/ttyACM0`)
+- `espnow.py`: JP226 ESP-NOW packets (`shared/TelemetryProtocol.h`); sizes are tested against the ESP32 compiler's
+- `camera.py` (rpicam-still + picamera2 live preview), `exif.py` (GPS EXIF, stdlib)
+- `webshare.py` (SHARE web page, photo gallery), `hotspot.py` (nmcli hotspot; polkit rule in `packaging/`)
+- `env.py`: Grove ENV unit (SHT3x/SHT4x, QMP6988, BMP280) over i2c-dev; unverified on the device
+- `imu.py`, `export.py`, `dino.py`, `obd.py` (unused interface)
 - `statestore.py`: `logger_state.json`, which keeps the stop session, time zone, vehicle setup and game best
 - `tests/helpers.py`: shared fixtures; `sample_data/`: demo NMEA
 - Sibling app: `../JP226-OBDii-Scanner-CP0` handles read-only OBD discovery

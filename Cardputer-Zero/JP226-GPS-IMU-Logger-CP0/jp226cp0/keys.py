@@ -22,6 +22,15 @@ SAVE_PROFILE = "save_profile"
 OBD_CONNECT = "obd_connect"
 SAVE_SETUP = "save_setup"
 GPS_SOURCE = "gps_source"
+SHARE_WEB = "share_web"
+ZIP_DAYS_DOWN = "zip_days_down"
+ZIP_DAYS_UP = "zip_days_up"
+EXPORT_NOW = "export_now"
+HOTSPOT = "hotspot"
+TAKE_PHOTO = "take_photo"
+GALLERY_PREV = "gallery_prev"
+GALLERY_NEXT = "gallery_next"
+ENV_GROVE = "env_grove"
 
 # Footer colour groups (see ui._KIND_COLOURS).
 KIND_NAV = "nav"
@@ -36,8 +45,22 @@ PAGE_ACTIONS: Dict[str, Tuple[Tuple[str, str, str, str], ...]] = {
     "SPEED": _WAYPOINT_ACTIONS,
     "GPS": (("KEY_4", "SOURCE", GPS_SOURCE, KIND_EDIT),) + _WAYPOINT_ACTIONS,
     "IMU": _WAYPOINT_ACTIONS,
+    "ENV": (("KEY_4", "GROVE", ENV_GROVE, KIND_EDIT),) + _WAYPOINT_ACTIONS,
+    "ESP-NOW": _WAYPOINT_ACTIONS,
     "LOGGER": _WAYPOINT_ACTIONS,
+    "SHARE": (
+        ("KEY_4", "WEB", SHARE_WEB, KIND_EDIT),
+        ("KEY_5", "DAYS-", ZIP_DAYS_DOWN, KIND_EDIT),
+        ("KEY_6", "DAYS+", ZIP_DAYS_UP, KIND_EDIT),
+        ("KEY_7", "EXPORT", EXPORT_NOW, KIND_SAVE),
+        ("KEY_8", "HOTSPOT", HOTSPOT, KIND_EDIT),
+    ),
     "WAYPOINT": _WAYPOINT_ACTIONS,
+    "CAMERA": (("KEY_7", "PHOTO", TAKE_PHOTO, KIND_SAVE),),
+    "GALLERY": (
+        ("KEY_4", "PREV", GALLERY_PREV, KIND_EDIT),
+        ("KEY_5", "NEXT", GALLERY_NEXT, KIND_EDIT),
+    ),
     "SETUP": (("KEY_7", "SAVE", SAVE_SETUP, KIND_SAVE),),
     "OBD": (
         ("KEY_4", "MAKE", CHANGE_MAKE, KIND_EDIT),

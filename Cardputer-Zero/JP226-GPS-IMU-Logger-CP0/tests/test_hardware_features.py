@@ -45,6 +45,7 @@ class Bmi270Tests(unittest.TestCase):
             sample = imu.snapshot_and_reset()
             latest = imu.latest_sample()
         self.assertTrue(sample.valid)
+        self.assertEqual(imu.type_name, "BMI270")   # DIAG and CSV imu_type
         self.assertEqual(sample.sample_count, 2)
         self.assertAlmostEqual(sample.ax_mps2, 2.394, places=3)
         self.assertAlmostEqual(sample.az_mps2, 9.806, places=2)

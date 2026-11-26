@@ -76,6 +76,7 @@ enum class LoggerBoard : std::uint8_t {
   Cardputer = 1,
   CardputerAdv = 2,
   Core2 = 3,
+  CardputerZero = 4,  // Through the AtomS3 USB bridge (atoms3_zero_bridge)
 };
 
 inline LoggerBoard beaconBoard(std::uint8_t timeFlags) {

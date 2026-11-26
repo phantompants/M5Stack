@@ -27,7 +27,8 @@ constexpr uint32_t kStatusStaleMs = 5000;
 // with any logger. The choice is saved.
 constexpr telemetry::LoggerBoard kTargetBoards[] = {
     telemetry::LoggerBoard::CardputerAdv, telemetry::LoggerBoard::Cardputer,
-    telemetry::LoggerBoard::Core2, telemetry::LoggerBoard::Unknown};
+    telemetry::LoggerBoard::Core2, telemetry::LoggerBoard::CardputerZero,
+    telemetry::LoggerBoard::Unknown};
 constexpr size_t kTargetBoardCount =
     sizeof(kTargetBoards) / sizeof(kTargetBoards[0]);
 // Read by the receive callback; a single byte, so no lock is needed.
@@ -612,6 +613,8 @@ const char* loggerName(uint8_t board) {
     case telemetry::LoggerBoard::Cardputer: return "CARDPUTER";
     case telemetry::LoggerBoard::CardputerAdv: return "CARDPUTER ADV";
     case telemetry::LoggerBoard::Core2: return "CORE2";
+    // The CardputerZero, through its AtomS3 USB bridge.
+    case telemetry::LoggerBoard::CardputerZero: return "CP ZERO";
     default: return "LOGGER";
   }
 }

@@ -13,15 +13,21 @@ timezone_auto=true
 # timezone=AEST-10AEDT,M10.1.0,M4.1.0/3
 
 # GPS serial port. Leave both commented to auto-detect (tries /dev/serial0,
-# /dev/ttyAMA0, /dev/ttyS0, /dev/ttyUSB0, /dev/ttyACM0 at 115200, 9600, 38400,
+# /dev/ttyAMA0, /dev/ttyS0, /dev/ttyUSB0 at 115200, 9600, 38400,
 # 4800, 19200, 57600 baud). HARDWARE UNVERIFIED: confirm next week.
 # gps_device=/dev/ttyAMA0
 # gps_baud=115200
 
-# Which GPS receiver feeds /dev/ttyS0. cap = LoRa-1262 GPS Cap (EXT 5V on);
-# grove = a Grove GPS unit, e.g. with the NFC/Sub-1GHz Cap fitted (Grove 5V on,
-# Grove port switched to UART). Key 4 on the GPS page changes it on the device.
+# Which GPS receiver to use. cap = LoRa-1262 GPS Cap on /dev/ttyS0 (EXT 5V on);
+# grove = a Grove GPS on the Zero's own Grove port (Grove 5V on, port switched
+# to UART); atom = the AtomS3 USB bridge's GPS Base on /dev/ttyACM0. Use atom
+# with the NFC/Sub-1GHz Cap fitted: that Cap blocks the UART, so neither cap
+# nor grove works with it. Key 4 on the GPS page changes it on the device.
 # gps_source=cap
+
+# SHARE page web server port. Ports below 1024 need root; 8080 is taken by
+# RaspyJack on the CardputerZero.
+# web_port=8226
 
 # Where CSV files are written (default ~/telemetry).
 # data_dir=/home/pi/telemetry

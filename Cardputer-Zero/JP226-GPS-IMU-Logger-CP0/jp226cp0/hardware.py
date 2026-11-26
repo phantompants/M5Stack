@@ -13,8 +13,24 @@ GPS_SERIAL_CANDIDATES = (
     "/dev/ttyS0",
     "/dev/ttyS1",
     "/dev/ttyUSB0",
+)
+
+# --------------------------------------------------------------------------
+# AtomS3 USB bridge (ESP32 repo atoms3_zero_bridge): ESP-NOW for the JP226
+# accessories plus the Atomic GPS Base NMEA. The ESP32-S3 USB CDC port shows
+# up as /dev/ttyACM0 (verified on the device 2026-11-26). It is kept out of
+# GPS_SERIAL_CANDIDATES so the GPS scan never opens the bridge's port.
+# --------------------------------------------------------------------------
+BRIDGE_SERIAL_CANDIDATES = (
+    "/dev/serial/by-id/usb-Espressif*",
     "/dev/ttyACM0",
 )
+BRIDGE_BAUD = 115200
+
+# Grove port in I2C mode (grove_fun HIGH) is CM0 I2C1 = /dev/i2c-1, the same
+# bus as the Zero's own I2C devices (0x10, 0x32, 0x34, 0x4F, 0x55, 0x68 seen on
+# the device 2026-11-26). The M5 ENV units use 0x44, 0x70 and 0x76.
+GROVE_I2C_BUS = 1
 
 # config::kCapGpsBaud first (the Cap's receiver), then the firmware's Grove
 # scan list config::kGroveGpsBaudCandidates {9600, 115200, 38400, 4800, 19200,

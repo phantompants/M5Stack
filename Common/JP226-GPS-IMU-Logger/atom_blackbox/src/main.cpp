@@ -1,10 +1,11 @@
-// Atom Lite "black box": a backup logger for the Cardputer. It pairs with the
-// logger like the M5Dial, receives a position report once a second and writes
-// it to daily CSV files on the Atomic SPK base's microSD card, so a trip
-// survives even if the Cardputer's own card fails.
+// Atom Lite "black box": a backup logger for the Cardputer or CardputerZero.
+// It pairs with the logger like the M5Dial, receives a position report once a
+// second and writes it to daily CSV files on the Atomic SPK base's microSD
+// card, so a trip survives even if the logger's own storage fails.
 //
-// Logger choice: hold the button and press the side reset button to toggle
-// between the Cardputer v1 (magenta blinks) and the Cardputer ADV (cyan).
+// Logger choice: hold the button and press the side reset button to step
+// through the Cardputer ADV (cyan blinks), the Cardputer v1 (magenta) and the
+// CardputerZero through its AtomS3 USB bridge (violet).
 // Button: tap to save a waypoint on the logger.
 // Light: blue blink = searching, green = recording, amber = linked but not
 // recording, red blink = SD card problem, white = waiting for a waypoint ack.
@@ -49,7 +50,9 @@ constexpr uint32_t kFreeSpaceIntervalMs = 60'000;
 constexpr uint32_t kAckTimeoutMs = 3500;
 
 constexpr telemetry::LoggerBoard kTargets[] = {
-    telemetry::LoggerBoard::CardputerAdv, telemetry::LoggerBoard::Cardputer};
+    telemetry::LoggerBoard::CardputerAdv, telemetry::LoggerBoard::Cardputer,
+    telemetry::LoggerBoard::CardputerZero};
+constexpr size_t kTargetCount = sizeof(kTargets) / sizeof(kTargets[0]);
 // Read by the receive callback; a single byte, so no lock is needed.
 volatile uint8_t targetBoard =
     static_cast<uint8_t>(telemetry::LoggerBoard::CardputerAdv);
@@ -485,9 +488,11 @@ void handleButton() {
 }
 
 uint32_t targetColor() {
-  return targetBoard == static_cast<uint8_t>(telemetry::LoggerBoard::Cardputer)
-             ? 0xFF00FF   // magenta: Cardputer v1
-             : 0x00FFFF;  // cyan: Cardputer ADV
+  switch (static_cast<telemetry::LoggerBoard>(targetBoard)) {
+    case telemetry::LoggerBoard::Cardputer: return 0xFF00FF;      // magenta
+    case telemetry::LoggerBoard::CardputerZero: return 0x8000FF;  // violet
+    default: return 0x00FFFF;                                     // cyan: ADV
+  }
 }
 
 void updateLed(uint32_t nowMs) {
@@ -558,13 +563,15 @@ void setup() {
   preferences.begin("blackbox", false);
   targetBoard = preferences.getUChar(
       "target", static_cast<uint8_t>(telemetry::LoggerBoard::CardputerAdv));
-  // Button held through a reset: toggle between the two Cardputers.
+  // Button held through a reset: step to the next logger.
   M5.update();
   if (M5.BtnA.isPressed()) {
-    targetBoard =
-        targetBoard == static_cast<uint8_t>(telemetry::LoggerBoard::Cardputer)
-            ? static_cast<uint8_t>(kTargets[0])
-            : static_cast<uint8_t>(kTargets[1]);
+    size_t index = 0;
+    while (index < kTargetCount &&
+           static_cast<uint8_t>(kTargets[index]) != targetBoard) {
+      ++index;
+    }
+    targetBoard = static_cast<uint8_t>(kTargets[(index + 1) % kTargetCount]);
     preferences.putUChar("target", targetBoard);
     blinkTarget(4);
     while (M5.BtnA.isPressed()) {  // Let go before normal use begins.

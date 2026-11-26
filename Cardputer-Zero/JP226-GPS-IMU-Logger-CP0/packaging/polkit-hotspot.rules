@@ -1,0 +1,12 @@
+// JP226 GPS-IMU Logger: let pi turn the app's Wi-Fi hotspot (SHARE page) on
+// and off. APPLaunch runs apps as a systemd user service, which polkit does
+// not treat as the active local session, so NetworkManager would otherwise
+// ask for a password. Removed with the package.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "pi" && subject.isInGroup("netdev") &&
+        (action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.wifi.share.protected")) {
+        return polkit.Result.YES;
+    }
+});

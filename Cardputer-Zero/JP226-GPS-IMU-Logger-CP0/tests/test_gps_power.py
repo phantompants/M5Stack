@@ -42,6 +42,16 @@ class GpsPowerTests(unittest.TestCase):
             self.assertEqual(read_led(tmp, "grove_5v_out"), "1")
             self.assertEqual(read_led(tmp, "ext_5v_out"), "0")
 
+    def test_atom_switches_grove_power_off_and_leaves_the_cap_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_leds(tmp)
+            for name in ("grove_5v_out", "ext_5v_out"):
+                with open(os.path.join(tmp, name, "brightness"), "w") as h:
+                    h.write("1")
+            self.assertEqual(gps_power.apply("atom", tmp), "USB POWER")
+            self.assertEqual(read_led(tmp, "grove_5v_out"), "0")
+            self.assertEqual(read_led(tmp, "ext_5v_out"), "1")
+
     def test_missing_control_and_permission_errors_are_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(gps_power.apply("cap", os.path.join(tmp, "x")),
@@ -55,11 +65,13 @@ class GpsPowerTests(unittest.TestCase):
                              "POWER: NO PERMISSION")
 
     def test_names_toggle_and_baud_order(self):
-        self.assertEqual(gps_power.normalise("NFC"), gps_power.GROVE)
+        self.assertEqual(gps_power.normalise("NFC"), gps_power.ATOM)
+        self.assertEqual(gps_power.normalise("AtomS3"), gps_power.ATOM)
         self.assertEqual(gps_power.normalise("LoRa"), gps_power.CAP)
         self.assertEqual(gps_power.normalise("bogus"), gps_power.CAP)
         self.assertEqual(gps_power.next_source("cap"), "grove")
-        self.assertEqual(gps_power.next_source("grove"), "cap")
+        self.assertEqual(gps_power.next_source("grove"), "atom")
+        self.assertEqual(gps_power.next_source("atom"), "cap")
         grove = gps_power.baud_order("grove", hardware.GPS_BAUD_CANDIDATES)
         self.assertEqual(grove[0], 9600)
         self.assertEqual(sorted(grove), sorted(hardware.GPS_BAUD_CANDIDATES))
@@ -85,15 +97,16 @@ class GpsSourceSettingTests(unittest.TestCase):
     def test_gps_page_key_4_switches_source_and_choice_is_saved(self):
         self.assertEqual(keys.page_action_for("GPS", "KEY_4"), keys.GPS_SOURCE)
         self.assertEqual(keys.page_action_for("GPS", "KEY_7"), keys.WAYPOINT)
-        self.assertIn(("4 SOURCE", keys.KIND_EDIT),
+        self.assertIn(("KEY_4", "SOURCE", keys.KIND_EDIT),
                       ui.footer_items(ui.PAGES.index("GPS")))
         with tempfile.TemporaryDirectory() as tmp:
             app = LoggerApp(Settings(gps_source="grove"), tmp, clock=Clock("gps"))
             self.assertEqual(app.ui_model(0)["gps_source"], "GROVE")
-            self.assertEqual(app.toggle_gps_source(), "cap")
+            self.assertEqual(app.toggle_gps_source(), "atom")
+            self.assertEqual(app.ui_model(0)["gps_source"], "ATOMS3 USB")
             app.close()
             again = LoggerApp(Settings(gps_source="grove"), tmp, clock=Clock("gps"))
-            self.assertEqual(again.gps_source, "cap")   # saved choice wins
+            self.assertEqual(again.gps_source, "atom")   # saved choice wins
             again.close()
 
 
