@@ -54,6 +54,10 @@ FRAMEBUFFER_DEVICE = os.environ.get("APPLAUNCH_LINUX_FBDEV_DEVICE", "/dev/fb0")
 SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 170
 
+# The camera module is mounted upside down in the CardputerZero, so the
+# preview and every photo are turned 180 degrees.
+CAMERA_ROTATE_180 = True
+
 # Keyboard key names are Linux input-event-codes names. The left/right arrows
 # are page-navigation aliases; settings and game controls are page-specific.
 # Number keys 4-8 are contextual page actions (keys.PAGE_ACTIONS), never page

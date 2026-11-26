@@ -214,6 +214,19 @@ class HotspotTests(unittest.TestCase):
         self.assertFalse(set(password) & set("0O1lI"))
 
 
+class CameraRotationTests(unittest.TestCase):
+    def test_rpicam_still_turns_the_photo_180_degrees(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            camera = CameraCapture(tmp, command="rpicam-still",
+                                   live=LiveCamera())
+            with mock.patch("jp226cp0.camera.subprocess.run") as run:
+                camera._rpicam_still(os.path.join(tmp, "x.jpg"))
+            argv = run.call_args[0][0]
+            self.assertEqual(argv[argv.index("--rotation") + 1], "180")
+            self.assertEqual(argv[-2], "--output")
+
+
 class FakeShotCamera(CameraCapture):
     def __init__(self, data_dir):
         super().__init__(data_dir, command="/bin/true", live=LiveCamera())

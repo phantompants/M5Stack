@@ -20,9 +20,27 @@ import threading
 import time
 from typing import Callable, Optional
 
+from . import hardware
+
 PHOTO_DIR = "photos"
 PREVIEW_SIZE = (320, 240)
 PHOTO_SIZE = (1640, 1232)
+
+
+def _rotate_180_transform():
+    """libcamera Transform for a 180-degree turn, or None when not wanted or
+    libcamera is missing (desktop)."""
+    if not hardware.CAMERA_ROTATE_180:
+        return None
+    try:
+        from libcamera import Transform  # optional, device only
+    except ImportError:
+        return None
+    return Transform(hflip=1, vflip=1)
+
+
+def rpicam_rotation_args():
+    return ["--rotation", "180"] if hardware.CAMERA_ROTATE_180 else []
 
 
 def picamera2_available() -> bool:
@@ -99,9 +117,15 @@ class LiveCamera:
             self.status = "NO CAMERA: {}".format(exc)[:40]
             return
         try:
+            extra = {}
+            transform = _rotate_180_transform()
+            if transform is not None:
+                extra["transform"] = transform
             preview = camera.create_preview_configuration(
-                main={"size": PREVIEW_SIZE, "format": "RGB888"}, buffer_count=3)
-            still = camera.create_still_configuration(main={"size": PHOTO_SIZE})
+                main={"size": PREVIEW_SIZE, "format": "RGB888"}, buffer_count=3,
+                **extra)
+            still = camera.create_still_configuration(
+                main={"size": PHOTO_SIZE}, **extra)
             camera.configure(preview)
             camera.start()
             self.status = "LIVE"
@@ -180,8 +204,8 @@ class CameraCapture:
         try:
             subprocess.run(
                 [self.command, "--nopreview", "--timeout", "1000",
-                 "--width", str(PHOTO_SIZE[0]), "--height", str(PHOTO_SIZE[1]),
-                 "--output", path],
+                 "--width", str(PHOTO_SIZE[0]), "--height", str(PHOTO_SIZE[1])]
+                + rpicam_rotation_args() + ["--output", path],
                 check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, timeout=20)
         except subprocess.CalledProcessError as exc:
