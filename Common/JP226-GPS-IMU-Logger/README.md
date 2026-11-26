@@ -478,9 +478,16 @@ take 3.3 V. A Grove port only carries 5 V, so take 3.3 V from the device's
 3V3 pin (the bottom header on an Atom, the M-Bus on a Core2). Up to four
 probes can share one port, wired in parallel.
 
+**M5Dial (no 3.3 V pin):** fit the 4.7 kΩ resistor **between the Grove
+cable's yellow and white wires** instead, with the probe's DATA on either of
+them. While searching, the Dial drives the other signal pin to 3.3 V, so the
+resistor becomes the pull-up (firmware v0.22). Without any resistor the
+ESP32's weak internal pull-up is tried, which some short-lead probes accept;
+the Dial's serial log prints `Probes: n on pin p` every 10 s.
+
 | Device | Port | Notes |
 |---|---|---|
-| M5Dial | Port B or Port A | Reading shown on its CONNECTION page |
+| M5Dial | Port B or Port A | Resistor across yellow and white (above). Reading shown on its CONNECTION page |
 | Atom Lite black box | Grove | Also written to its own backup CSV (`probe_c`) |
 | Atom Echo | Grove | Safe: only the Echo's bottom pins clash with an SD card |
 | Core2 | Port A (red, on the Core2) | The GPS is on the DIN base's Port B |

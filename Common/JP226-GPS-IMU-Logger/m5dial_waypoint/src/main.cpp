@@ -816,7 +816,10 @@ void setup() {
       "target", static_cast<uint8_t>(telemetry::LoggerBoard::CardputerAdv));
   dinoGame.setBest(preferences.getUShort(dino::kBestKey, 0));
   // DS18B20 probes on Port B (G1/G2) or Port A (G13/G15).
-  probes.begin({1, 2, 13, 15});
+  // Port B (G1/G2), then Port A (G13/G15). The Dial's Grove ports have no
+  // 3.3 V pin, so a 4.7 kOhm resistor between a cable's two signal wires
+  // is the probe's pull-up, with the other signal pin driven high.
+  probes.begin({1, 2, 13, 15}, true, true);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   nextSequence = esp_random();
