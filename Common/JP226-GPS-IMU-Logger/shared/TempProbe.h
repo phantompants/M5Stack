@@ -3,7 +3,8 @@
 // DS18B20 waterproof temperature probes on a Grove port, shared by every
 // device. Wire red to 5 V, black to GND and yellow to a Grove signal pin, with
 // a 4.7 kOhm pull-up from yellow to 3.3 V (never to 5 V: the ESP32 pins are
-// 3.3 V only). Either Grove signal pin works: both are searched, and the
+// 3.3 V only). Without the resistor the ESP32's internal pull-up is used,
+// which usually works for one probe on a short cable. Either Grove signal pin works: both are searched, and the
 // search repeats every minute so a probe can be plugged in later. Up to
 // kMaxProbes can share one port on the same 1-Wire bus.
 //
@@ -30,8 +31,16 @@ class TempProbes {
   // Candidate pins (up to four), in the order they are tried. With rescan
   // false the pins are only searched once, so they can be handed to
   // something else (the Cardputer's Grove GPS) when no probe is found.
-  void begin(std::initializer_list<int> pins, bool rescan = true) {
+  //
+  // partnerPullup: the pins are Grove pairs (1st+2nd, 3rd+4th). While one
+  // pin of a pair is searched, the other is driven high (3.3 V) so a
+  // 4.7 kOhm resistor between the cable's two signal wires is the pull-up.
+  // For ports with no 3.3 V pin (M5Dial). The pair stays that way while a
+  // probe is found on it.
+  void begin(std::initializer_list<int> pins, bool rescan = true,
+             bool partnerPullup = false) {
     rescan_ = rescan;
+    partnerPullup_ = partnerPullup;
     pinCount_ = 0;
     for (int pin : pins) {
       if (pinCount_ < kMaxPins && pin >= 0) pins_[pinCount_++] = pin;
@@ -80,13 +89,31 @@ class TempProbes {
   static constexpr uint32_t kConversionMs = 800;
   static constexpr uint32_t kSearchIntervalMs = 60'000;
 
+  void releasePartner() {
+    if (partnerPin_ >= 0) pinMode(partnerPin_, INPUT);
+    partnerPin_ = -1;
+  }
+
   void search() {
     lastSearchMs_ = millis();
     count_ = 0;
     activePin_ = -1;
+    releasePartner();
     for (int p = 0; p < pinCount_; ++p) {
       const int pin = pins_[p];
+      if (partnerPullup_ && (p ^ 1) < pinCount_) {
+        releasePartner();
+        partnerPin_ = pins_[p ^ 1];
+        pinMode(partnerPin_, OUTPUT);
+        digitalWrite(partnerPin_, HIGH);
+        delay(2);
+      }
       wire_.begin(pin);
+      // The ESP32's internal pull-up (about 45 kOhm). Weak, but enough for
+      // one probe on a short cable when the 4.7 kOhm resistor is missing;
+      // harmless alongside it. OneWire only switches the pin's direction,
+      // so the pull-up stays on.
+      pinMode(pin, INPUT_PULLUP);
       sensors_.setOneWire(&wire_);
       sensors_.begin();
       const int found = sensors_.getDeviceCount();
@@ -101,18 +128,21 @@ class TempProbes {
         ++count_;
       }
       if (count_ > 0) {
-        activePin_ = pin;
+        activePin_ = pin;  // partnerPin_ (if any) stays high as the pull-up
         lastReadMs_ = 0;
         converting_ = false;
         return;
       }
     }
+    releasePartner();
   }
 
   static constexpr int kMaxPins = 4;
   int pins_[kMaxPins]{};
   int pinCount_ = 0;
   bool rescan_ = true;
+  bool partnerPullup_ = false;
+  int partnerPin_ = -1;
   int activePin_ = -1;
   OneWire wire_;
   DallasTemperature sensors_;

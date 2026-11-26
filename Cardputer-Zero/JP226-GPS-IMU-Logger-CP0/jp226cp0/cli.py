@@ -15,7 +15,7 @@ import tempfile
 import time
 from typing import List, Optional
 
-from . import APP_TITLE, __version__, hardware, keys, ui
+from . import APP_TITLE, __version__, gps_power, hardware, keys, ui
 from .app import LoggerApp, replay_lines
 from .clock import Clock
 from .settings import default_data_dir, load_settings
@@ -103,9 +103,84 @@ def run_replay_mode(args, settings) -> int:
     return 0
 
 
-def run_live(args, settings) -> int:
-    from .gps_source import SerialGpsReader
+class _NoReader:
+    """Stands in for the serial reader when the AtomS3 bridge supplies GPS:
+    its NMEA arrives through the BridgeLink instead."""
 
+    def __init__(self):
+        import queue
+        self.lines = queue.Queue()
+        self.device = ""
+        self.baud = 0
+        self.status = ""
+
+    def stop(self) -> None:
+        pass
+
+    def join(self, timeout=None) -> None:
+        pass
+
+
+def start_gps_reader(app: LoggerApp, settings, now_ms):
+    """Power the chosen receiver, then start a reader that tries its baud first."""
+    from .gps_source import SerialGpsReader
+    app.gps_power_status = gps_power.apply(app.gps_source)
+    print("GPS source {}: {}".format(gps_power.LABELS[app.gps_source],
+                                     app.gps_power_status), file=sys.stderr)
+    app.apply_env_power()
+    if app.gps_source == gps_power.ATOM:
+        return _NoReader()
+    reader = SerialGpsReader(
+        now_ms, settings.gps_device, settings.gps_baud,
+        baud_candidates=gps_power.baud_order(app.gps_source,
+                                             hardware.GPS_BAUD_CANDIDATES))
+    reader.start()
+    return reader
+
+
+def _run_page_action(app: LoggerApp, action: str, now: int) -> bool:
+    """Number keys 4-8 act within the current page (they never change page).
+    Returns True when the GPS reader must be restarted."""
+    """Number keys 4-8: act within the current page (they never change page)."""
+    if action == keys.WAYPOINT:
+        app.create_waypoint(now)
+    elif action == keys.SAVE_SETUP:
+        app.store.put(vehicle_setup=app.vehicle)
+    elif action == keys.CHANGE_MAKE:
+        app.change_obd_profile_field("make")
+    elif action == keys.CHANGE_MODEL:
+        app.change_obd_profile_field("model")
+    elif action == keys.CHANGE_YEAR:
+        app.change_obd_profile_field("year")
+    elif action == keys.SAVE_PROFILE:
+        app.save_obd_profile()
+    elif action == keys.OBD_CONNECT:
+        app.connect_obd()
+    elif action == keys.SHARE_WEB:
+        app.toggle_share()
+    elif action == keys.ZIP_DAYS_DOWN:
+        app.change_zip_days(-1)
+    elif action == keys.ZIP_DAYS_UP:
+        app.change_zip_days(1)
+    elif action == keys.EXPORT_NOW:
+        app.export_now()
+    elif action == keys.GPS_SOURCE:
+        app.toggle_gps_source()
+        return True
+    elif action == keys.HOTSPOT:
+        app.toggle_hotspot()
+    elif action == keys.TAKE_PHOTO:
+        app.take_photo(now)
+    elif action == keys.GALLERY_PREV:
+        app.gallery_step(-1)
+    elif action == keys.GALLERY_NEXT:
+        app.gallery_step(1)
+    elif action == keys.ENV_GROVE:
+        app.toggle_env()
+    return False
+
+
+def run_live(args, settings) -> int:
     data_dir = args.out or settings.data_dir or default_data_dir()
     app = LoggerApp(settings, data_dir)
     t0 = time.monotonic()
@@ -113,8 +188,11 @@ def run_live(args, settings) -> int:
     def now_ms() -> int:
         return int((time.monotonic() - t0) * 1000)
 
-    reader = SerialGpsReader(now_ms, settings.gps_device, settings.gps_baud)
-    reader.start()
+    reader = start_gps_reader(app, settings, now_ms)
+    from .bridge import BridgeLink
+    link = BridgeLink(now_ms)
+    link.start()
+    app.start_services()
 
     screen = None
     key_reader = None
@@ -155,13 +233,36 @@ def run_live(args, settings) -> int:
                 except Exception:
                     break
                 app.feed_line(line, stamp)
-            app.source_info = {"device": reader.device, "baud": reader.baud,
-                               "status": reader.status}
+            while True:
+                try:
+                    stamp, line = link.lines.get_nowait()
+                except Exception:
+                    break
+                app.feed_bridge_line(line, stamp)
+            app.bridge_link_status = "ATOMS3 " + link.status
+            if app.gps_source == gps_power.ATOM:
+                app.source_info = {
+                    "device": link.device,
+                    "baud": hardware.BRIDGE_BAUD if link.device else 0,
+                    "status": (app.bridge.gps_text(now) if link.device
+                               else app.bridge_link_status)}
+            else:
+                app.source_info = {"device": reader.device, "baud": reader.baud,
+                                   "status": reader.status}
             app.tick(now)
+            for body in app.bridge_lines_due(now):
+                link.send(body)
 
             if key_reader is not None:
                 for name in key_reader.poll():
                     app.last_key = name
+                    page_action = keys.page_action_for(ui.PAGES[page], name)
+                    if page_action is not None:
+                        if _run_page_action(app, page_action, now):
+                            reader.stop()
+                            reader.join(timeout=3)
+                            reader = start_gps_reader(app, settings, now_ms)
+                        continue
                     action = keys.action_for(name)
                     if action == keys.NEXT_PAGE:
                         page = (page + 1) % len(ui.PAGES)
@@ -181,16 +282,22 @@ def run_live(args, settings) -> int:
                         app.adjust_vehicle_setting(1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_PREV):
-                        app.select_obd_option(-1)
+                        app.select_obd_profile_field(-1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_NEXT):
-                        app.select_obd_option(1)
+                        app.select_obd_profile_field(1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_DEC):
-                        app.adjust_obd_option(-1)
+                        app.adjust_obd_profile(-1)
                     elif (page == ui.OBD_PAGE_INDEX and
                           name in hardware.KEYS_SETTING_INC):
-                        app.adjust_obd_option(1)
+                        app.adjust_obd_profile(1)
+                    elif (page == ui.GALLERY_PAGE_INDEX and
+                          name in hardware.KEYS_SETTING_PREV):
+                        app.gallery_step(-1)
+                    elif (page == ui.GALLERY_PAGE_INDEX and
+                          name in hardware.KEYS_SETTING_NEXT):
+                        app.gallery_step(1)
                     elif (page == ui.DINO_PAGE_INDEX and
                           name in hardware.KEYS_DINO_JUMP):
                         app.press_dino(now)
@@ -198,30 +305,37 @@ def run_live(args, settings) -> int:
                           name in hardware.KEYS_DINO_TOGGLE):
                         app.toggle_dino_character()
                     elif action == keys.WAYPOINT:
-                        if page == ui.SETTINGS_PAGE_INDEX:
+                        if page == ui.CAMERA_PAGE_INDEX:
+                            app.take_photo(now)
+                        elif page == ui.GALLERY_PAGE_INDEX:
+                            pass
+                        elif page == ui.SETTINGS_PAGE_INDEX:
                             app.store.put(vehicle_setup=app.vehicle)
                         elif page == ui.DINO_PAGE_INDEX:
                             app.press_dino(now)
                         elif page == ui.OBD_PAGE_INDEX:
-                            app.start_obd_scan()
+                            app.save_obd_profile()
                         else:
                             app.create_waypoint(now)
                     elif action == keys.QUIT:
                         running["on"] = False
-            draw_interval = 33 if page == ui.DINO_PAGE_INDEX else 100
+            app.camera_page(page == ui.CAMERA_PAGE_INDEX)
+            draw_interval = (33 if page == ui.DINO_PAGE_INDEX else
+                             66 if page == ui.CAMERA_PAGE_INDEX else 100)
             if screen is not None and now - last_draw >= draw_interval:
                 last_draw = now
                 screen.show(ui.render_page(page, app.ui_model(now)))
             if args.headless and now - last_print >= 10_000:
                 last_print = now
                 m = app.ui_model(now)
-                print("{} fix={} sats={} speed={} rows={} gps={}".format(
+                print("{} fix={} sats={} speed={} rows={} gps={} atoms3={}".format(
                     m["log_state"], int(m["fix_valid"]), m["satellites"],
-                    m["speed_kmh"], m["rows_written"], m["gps_status"]),
-                      flush=True)
+                    m["speed_kmh"], m["rows_written"], m["gps_status"],
+                    m["bridge_status"]), flush=True)
             time.sleep(0.01)
     finally:
         reader.stop()
+        link.stop()
         app.close()
         if key_reader is not None:
             key_reader.close()

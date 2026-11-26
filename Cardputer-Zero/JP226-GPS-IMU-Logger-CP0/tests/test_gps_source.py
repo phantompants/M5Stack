@@ -58,7 +58,9 @@ class HelperTests(unittest.TestCase):
 
     def test_candidate_devices_order_and_filtering(self):
         present = {"/dev/ttyS0", "/dev/ttyUSB0", "/dev/serial0"}
-        devices = candidate_devices("", exists=lambda p: p in present)
+        # realpath is faked: on a CardputerZero /dev/serial0 really is ttyS0.
+        devices = candidate_devices("", exists=lambda p: p in present,
+                                    realpath=lambda p: p)
         self.assertEqual(devices, ["/dev/serial0", "/dev/ttyS0", "/dev/ttyUSB0"])
         devices = candidate_devices("/dev/ttyACM9", exists=lambda p: p in present)
         self.assertEqual(devices[0], "/dev/ttyACM9")            # configured first
@@ -67,8 +69,17 @@ class HelperTests(unittest.TestCase):
 
     def test_candidate_list_matches_the_documented_assumption(self):
         self.assertEqual(hardware.GPS_SERIAL_CANDIDATES,
-                         ("/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0",
-                          "/dev/ttyUSB0", "/dev/ttyACM0"))
+                         ("/dev/serial0", "/dev/ttyAMA1", "/dev/ttyAMA0",
+                          "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyUSB0"))
+
+    def test_candidate_devices_deduplicate_serial_aliases(self):
+        aliases = {"/dev/serial0": "/dev/ttyS0"}
+        paths = ("/dev/serial0", "/dev/ttyAMA1", "/dev/ttyS0")
+        devices = candidate_devices(
+            candidates=paths,
+            exists=lambda path: True,
+            realpath=lambda path: aliases.get(path, path))
+        self.assertEqual(devices, ["/dev/serial0", "/dev/ttyAMA1"])
 
     def test_baud_list_starts_with_cap_baud_and_covers_config_h(self):
         bauds = candidate_bauds()

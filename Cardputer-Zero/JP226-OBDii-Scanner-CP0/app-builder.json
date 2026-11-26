@@ -1,0 +1,35 @@
+{
+  "package_name": "jp226-obdii-scanner-cp0",
+  "version": "0.1",
+  "app_name": "JP226 OBD-II Scanner",
+  "bin_name": "jp226-obdii-scanner-cp0",
+  "description": "Read-only OBD-II scanner (USB/Wi-Fi/BLE) and capability profiler for JP226 car apps",
+  "store": {
+    "summary": "Read-only OBD-II scanner for USB, Wi-Fi and BLE with Logger & EV Sound fit",
+    "description": "Connects to ELM327/STN OBD-II adapters over USB serial, Wi-Fi TCP, or Bluetooth LE to scan supported Mode 01 PIDs, Mode 03/07 DTCs, Mode 09 VIN/ECU info, UDS Mode 22 modules/DIDs, and live polling rates. Evaluates and exports compatibility profiles for JP226-GPS-IMU-Logger and the EV Sound Emulator on Cardputer Zero and ADV.",
+    "categories": ["Hardware & IoT", "System Tools"],
+    "screenshots": [
+      "screenshots/1_connect.png",
+      "screenshots/2_scan.png",
+      "screenshots/3_live.png",
+      "screenshots/4_logger_fit.png",
+      "screenshots/5_ev_sound_fit.png",
+      "screenshots/6_modules.png"
+    ],
+    "icon": "packaging/icon.png",
+    "license": "MIT",
+    "source_repo": "https://github.com/phantompants/M5Stack/tree/main/Cardputer-Zero/JP226-OBDii-Scanner-CP0",
+    "author": { "github": "jp226prints", "display_name": "JP226 Prints" },
+    "share_code": "TODO",
+    "permissions": {
+      "camera": false,
+      "microphone": false,
+      "imu": false,
+      "network": true,
+      "additional_hardware": true,
+      "background_service": false,
+      "external_display": false
+    },
+    "locales": {}
+  }
+}

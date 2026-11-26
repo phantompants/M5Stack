@@ -8,11 +8,29 @@ import os
 # --------------------------------------------------------------------------
 GPS_SERIAL_CANDIDATES = (
     "/dev/serial0",
+    "/dev/ttyAMA1",
     "/dev/ttyAMA0",
     "/dev/ttyS0",
+    "/dev/ttyS1",
     "/dev/ttyUSB0",
+)
+
+# --------------------------------------------------------------------------
+# AtomS3 USB bridge (ESP32 repo atoms3_zero_bridge): ESP-NOW for the JP226
+# accessories plus the Atomic GPS Base NMEA. The ESP32-S3 USB CDC port shows
+# up as /dev/ttyACM0 (verified on the device 2026-11-26). It is kept out of
+# GPS_SERIAL_CANDIDATES so the GPS scan never opens the bridge's port.
+# --------------------------------------------------------------------------
+BRIDGE_SERIAL_CANDIDATES = (
+    "/dev/serial/by-id/usb-Espressif*",
     "/dev/ttyACM0",
 )
+BRIDGE_BAUD = 115200
+
+# Grove port in I2C mode (grove_fun HIGH) is CM0 I2C1 = /dev/i2c-1, the same
+# bus as the Zero's own I2C devices (0x10, 0x32, 0x34, 0x4F, 0x55, 0x68 seen on
+# the device 2026-11-26). The M5 ENV units use 0x44, 0x70 and 0x76.
+GROVE_I2C_BUS = 1
 
 # config::kCapGpsBaud first (the Cap's receiver), then the firmware's Grove
 # scan list config::kGroveGpsBaudCandidates {9600, 115200, 38400, 4800, 19200,
@@ -38,6 +56,8 @@ SCREEN_HEIGHT = 170
 
 # Keyboard key names are Linux input-event-codes names. The left/right arrows
 # are page-navigation aliases; settings and game controls are page-specific.
+# Number keys 4-8 are contextual page actions (keys.PAGE_ACTIONS), never page
+# shortcuts.
 # --------------------------------------------------------------------------
 KEYS_NEXT_PAGE = ("KEY_TAB", "KEY_RIGHTBRACE", "KEY_RIGHT", "KEY_C")
 KEYS_PREV_PAGE = ("KEY_LEFTBRACE", "KEY_LEFT", "KEY_Z")
@@ -49,6 +69,7 @@ KEYS_SETTING_DEC = ("KEY_A", "KEY_MINUS", "KEY_W")
 KEYS_SETTING_INC = ("KEY_D", "KEY_EQUAL", "KEY_E")
 KEYS_DINO_JUMP = ("KEY_SPACE", "KEY_ENTER", "KEY_KPENTER", "KEY_SEMICOLON")
 KEYS_DINO_TOGGLE = ("KEY_B",)
+KEYS_PAGE_ACTIONS = ("KEY_4", "KEY_5", "KEY_6", "KEY_7", "KEY_8")
 
 # --------------------------------------------------------------------------
 # Real-time clock / system clock. The

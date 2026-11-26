@@ -60,6 +60,8 @@ class UnavailableImu(NullImu):
 class Bmi270IioReader(ImuReader):
     """Reads the CardputerZero BMI270 from Linux IIO sysfs."""
 
+    type_name = "BMI270"
+
     def __init__(self, device_path: str):
         self.device_path = device_path
         self.accel_scale = float(self._read("in_accel_scale"))

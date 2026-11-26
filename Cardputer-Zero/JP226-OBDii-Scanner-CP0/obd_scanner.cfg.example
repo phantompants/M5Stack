@@ -1,0 +1,38 @@
+# JP226 OBD-II Scanner configuration
+# Copy to ~/telemetry/obd_scanner/obd_scanner.cfg (or pass --config FILE).
+# Read-only: services 01, 03, 07, 09, 22 only. Ignition ON / engine or EV Ready.
+
+# Link: usb | wifi | ble | demo
+link = usb
+
+# usb: blank = auto-detect first /dev/serial/by-id/* or /dev/ttyUSB*/ttyACM*
+device =
+# baud: 0 = auto-probe (115200, 38400, 500000, 9600)
+baud = 0
+
+# wifi: ELM327 Wi-Fi TCP endpoint (join the adapter AP first)
+host = 192.168.0.10
+port = 35000
+
+# ble: adapter name substring or MAC address; blank = auto OBD match
+ble_name =
+
+# demo_profile: ranger | ev | hybrid (used when link = demo)
+demo_profile = ranger
+
+# protocol: 0 = AUTO, 6 = CAN 11/500, 7 = CAN 29/500, 8 = CAN 11/250, 9 = CAN 29/250
+protocol = 0
+
+# scan_mode: quick | ev_probe | full
+scan_mode = quick
+
+# Full-scan UDS request header range and DID ranges
+modules = 700-7F7
+did_ranges = F100-F1FF,DD00-DDFF,2800-28FF,4000-40FF,0100-01FF,2100-21FF
+module_timeout_ms = 100
+per_module_minutes = 8
+total_minutes = 60
+benchmark_samples = 8
+
+# Output directory (blank = ~/telemetry/obd_scanner)
+out_dir =

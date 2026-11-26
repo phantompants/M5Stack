@@ -3,20 +3,22 @@ CSV writing and waypoints together. No hardware, UI or threads in here, so the
 whole pipeline runs on a desktop (see replay_lines and the tests).
 """
 
+import math
 import os
 import sys
-import threading
 import time
-import datetime
 from typing import Dict, Iterable, Optional
 
-from . import __version__, config, obdscan
+from . import __version__, config
 from .clock import Clock
 from .csvlog import DailyCsv, CSV_HEADER, build_telemetry_row
 from .build_info import read_build_info
 from .camera import CameraCapture
 from .dino import DinoGame
-from .elm327 import Elm327
+import base64
+
+from . import (bridge, env, espnow, exif, export, gps_power, hotspot,
+               sysmon, webshare)
 from .imu import ImuReader, create_default_imu
 from .location_time import LocationTime
 from .logmode import LogStateMachine
@@ -68,22 +70,49 @@ class LoggerApp:
             dino_best = 0
         self.dino = DinoGame(dino_best)
         self.obd_selection = 0
-        self.obd_link = self.store.get("obd_link", obdscan.DEFAULTS["link"])
-        if self.obd_link not in obdscan.LINK_CHOICES:
-            self.obd_link = obdscan.DEFAULTS["link"]
-        self.obd_protocol = str(self.store.get(
-            "obd_protocol", obdscan.DEFAULTS["protocol"])).upper()
-        if self.obd_protocol not in obdscan.PROTOCOL_LABELS:
-            self.obd_protocol = obdscan.DEFAULTS["protocol"]
-        self.obd_full_scan = bool(self.store.get("obd_full_scan", False))
-        self.obd_scan_status = "READY"
-        self.obd_scan_progress = ""
-        self.obd_scan_summary = ""
-        self._obd_cancel = threading.Event()
-        self._obd_thread: Optional[threading.Thread] = None
+        saved_profile = self.store.get("vehicle_profile")
+        self.obd_profile = vehicle_settings.load_profile(saved_profile)
+        self.obd_message = ("SAVED PROFILE LOADED" if isinstance(saved_profile, dict)
+                            else "SELECT PROFILE")
+        self.obd_status = "NOT CONNECTED"
         self.waypoint_message = ""
         self.last_key = ""
         self.source_info = {"device": "", "baud": 0, "status": "NO SOURCE"}
+        self.gps_source = gps_power.normalise(
+            self.store.get("gps_source"), settings.gps_source)
+        self.gps_power_status = ""
+        self.bridge = bridge.BridgeState()
+        self.bridge_outbox = bridge.BridgeOutbox(__version__)
+        self.bridge_link_status = "NOT STARTED"
+        self.controllers = bridge.Controllers()
+        self.radio_devices = bridge.DeviceTable()
+        self._bridge_tx = []
+        self._status_sequence = 0
+        self._position_sequence = 0
+        self.trip_started_ms: Optional[int] = None
+        self.last_waypoint_id = ""
+        self.photo_message = ""
+        self.last_photo = ""
+        self.gallery_index = 0
+        self.hotspot = hotspot.Hotspot()
+        self.env_enabled = bool(self.store.get("env_grove", False))
+        self.env_power_status = ""
+        self.env_reader = None
+        self.probes = {}   # (source, probe id) -> (now_ms, celsius or None)
+        self.system = sysmon.SystemMonitor(data_dir)
+        self._system_at: Optional[int] = None
+        self.share_enabled = bool(self.store.get("share_enabled", False))
+        try:
+            zip_days = int(self.store.get("zip_days", 7))
+        except (TypeError, ValueError):
+            zip_days = 7
+        self.zip_days = zip_days if zip_days in webshare.ZIP_DAY_CHOICES else 7
+        self.exporter = export.NightlyExporter(data_dir, self.local_date_today)
+        self.web = webshare.WebShare(data_dir, settings.web_port,
+                                     lambda: self.zip_days,
+                                     export_lock=self.exporter.lock)
+        self._share_urls = []
+        self._share_urls_at = None
         self.last_tick_ms = 0
         self.last_utc_ms: Optional[int] = None
 
@@ -91,12 +120,180 @@ class LoggerApp:
     def feed_line(self, line: str, now_ms: int) -> None:
         self.gps.feed_line(line, now_ms)
 
+    def feed_bridge_line(self, line: str, now_ms: int) -> None:
+        """A line from the AtomS3 bridge: its own $PJP226 lines update the
+        bridge state; its GPS Base NMEA is used only when ATOM is the source."""
+        if bridge.is_bridge_line(line):
+            fields = self.bridge.handle(line, now_ms)
+            if fields and fields[0] == "RX":
+                self.radio_devices.note(fields, now_ms)
+                self._note_temperatures(fields, now_ms)
+                self._bridge_tx.extend(self.controllers.handle_rx(
+                    fields, now_ms,
+                    lambda action, value, text: self.handle_dial_command(
+                        action, value, text, now_ms)))
+        elif self.gps_source == gps_power.ATOM:
+            self.gps.feed_line(line, now_ms)
+
+    def _note_temperatures(self, fields, now_ms: int) -> None:
+        try:
+            report = espnow.decode_temperature(
+                base64.b64decode(fields[3], validate=True))
+        except (ValueError, IndexError):
+            return
+        if report is None:
+            return
+        source, readings = report
+        for probe_id, celsius in readings:
+            self.probes[(source, probe_id)] = (now_ms, celsius)
+        # Keep the table small: drop probes not heard for 10 minutes, and
+        # the oldest beyond 32.
+        for key in [k for k, (stamp, _c) in self.probes.items()
+                    if now_ms - stamp > 600_000]:
+            del self.probes[key]
+        while len(self.probes) > 32:
+            del self.probes[min(self.probes, key=lambda k: self.probes[k][0])]
+
+    def probe_rows(self, now_ms: int):
+        """(label, celsius, age ms) per probe heard in the last 10 minutes."""
+        rows = []
+        counts = {}
+        for (source, probe_id) in sorted(self.probes):
+            stamp, celsius = self.probes[(source, probe_id)]
+            if now_ms - stamp > 600_000:
+                continue
+            name = espnow.PROBE_SOURCES.get(source, "PROBE")
+            counts[name] = counts.get(name, 0) + 1
+            rows.append(("{} {}".format(name, counts[name]), celsius,
+                         max(0, now_ms - stamp)))
+        return rows
+
+    # -- ENV page: M5 ENV unit on the Grove port ----------------------------
+    def apply_env_power(self) -> None:
+        enabled = self.env_enabled and self.gps_source != gps_power.GROVE
+        self.env_power_status = gps_power.apply_env(enabled, self.gps_source)
+        if enabled and self.env_reader is None:
+            self.env_reader = env.GroveEnv()
+            self.env_reader.start()
+        elif not enabled and self.env_reader is not None:
+            self.env_reader.stop()
+            self.env_reader = None
+
+    def toggle_env(self) -> None:
+        self.env_enabled = not self.env_enabled
+        self.store.put(env_grove=self.env_enabled)
+        self.apply_env_power()
+
+    def env_readings(self):
+        if self.gps_source == gps_power.GROVE and self.env_enabled:
+            return env.null_readings("GROVE GPS IN USE")
+        if self.env_reader is None:
+            return env.null_readings("OFF")
+        return self.env_reader.readings()
+
+    def bridge_lines_due(self, now_ms: int):
+        """Bodies to send to the bridge now: HELLO and TIME once a second, and
+        GPS,<0|1> while its NMEA forwarding does not match the GPS source."""
+        utc_s = self.last_utc_ms // 1000 if self.last_utc_ms is not None else None
+        offset_s = (self.location_time.offset_at(utc_s)
+                    if utc_s is not None else None)
+        battery = self.system.values
+        bodies = self.bridge_outbox.due(
+            now_ms, self.bridge, self.gps_source == gps_power.ATOM,
+            utc_s, offset_s,
+            battery_percent=battery["battery_pct"]
+            if battery["battery_pct"] is not None else -1,
+            battery_mv=battery["battery_mv"] or 0)
+        bodies.extend(self._bridge_tx)
+        self._bridge_tx = []
+        bodies.extend(self.controllers.due(
+            now_ms, lambda: self.dial_status_packet(now_ms),
+            lambda: self.position_report_packet()))
+        return bodies
+
+    def bridge_status_text(self, now_ms: int) -> str:
+        if not self.bridge.connected(now_ms):
+            return self.bridge_link_status
+        dials = len(self.controllers.fresh(now_ms))
+        text = self.bridge.status_text(now_ms)
+        return text + " {} DIAL".format(dials) if dials else text
+
+    # -- M5Dial through the AtomS3 bridge (the ESP32 logger's handleDialCommand)
+    def handle_dial_command(self, action: int, value: float, text: str,
+                            now_ms: int):
+        """Run one DialCommand. Returns (accepted, waypoint_id)."""
+        text = text.strip().upper()
+        field = {espnow.SET_ROAD: "road_type",
+                 espnow.SET_SURFACE: "road_surface",
+                 espnow.SET_SUSPENSION_FRONT: "suspension_front",
+                 espnow.SET_SUSPENSION_REAR: "suspension_rear",
+                 espnow.SET_LOAD: "vehicle_load"}.get(action)
+        if action == espnow.MARK_WAYPOINT:
+            self.create_waypoint(now_ms, category=text or "GENERIC")
+            return bool(self.last_waypoint_id), self.last_waypoint_id
+        if field is not None:
+            if text not in vehicle_settings.CHOICES[field]:
+                return False, ""
+            self.vehicle[field] = text
+        elif action in (espnow.SET_TYRE_FRONT, espnow.SET_TYRE_REAR):
+            if not (math.isfinite(value) and 0.0 <= value <= 100.0):
+                return False, ""
+            sides = (("tyre_set_fl_psi", "tyre_set_fr_psi")
+                     if action == espnow.SET_TYRE_FRONT
+                     else ("tyre_set_rl_psi", "tyre_set_rr_psi"))
+            for name in sides:
+                self.vehicle[name] = int(round(value))
+        else:
+            return False, ""
+        self.store.put(vehicle_setup=self.vehicle)
+        return True, ""
+
+    def dial_status_packet(self, now_ms: int) -> bytes:
+        snap = self.snapshot
+        self._status_sequence += 1
+        last = self.waypoints.last
+        poi = self.waypoints.poi_for(snap)[0]
+        storage_ok = not (self.telemetry.last_error or self.waypoints.last_error)
+        return espnow.encode_status(
+            self._status_sequence, now_ms,
+            (now_ms - self.trip_started_ms) // 1000
+            if self.trip_started_ms is not None else 0,
+            snap.speed_kmh if snap.speed_fresh else 0.0,
+            float(self.vehicle["tyre_set_fl_psi"]),
+            float(self.vehicle["tyre_set_rl_psi"]),
+            snap.fix_valid, snap.satellites if snap.satellites_valid else 0,
+            espnow.LOG_MODES.get(self.machine.mode, 0),
+            self.vehicle["road_type"], self.vehicle["suspension_front"],
+            self.vehicle["suspension_rear"], self.vehicle["vehicle_load"],
+            poi, last["id"] if last else "",
+            battery_percent=self.system.values["battery_pct"]
+            if self.system.values["battery_pct"] is not None else -1,
+            link_flags=espnow.LINK_SD_READY if storage_ok else 0,
+            road_surface=self.vehicle["road_surface"])
+
+    def position_report_packet(self) -> bytes:
+        snap = self.snapshot
+        self._position_sequence += 1
+        utc_ms = self.last_utc_ms
+        offset_min = (self.location_time.offset_at(utc_ms // 1000) // 60
+                      if utc_ms is not None else 0)
+        return espnow.encode_position(
+            self._position_sequence, utc_ms, offset_min, snap.fix_valid,
+            snap.position_fresh, snap.satellites if snap.satellites_valid else 0,
+            espnow.LOG_MODES.get(self.machine.mode, 0), snap.latitude,
+            snap.longitude, snap.altitude_m,
+            snap.speed_kmh if snap.speed_fresh else 0.0, snap.course_deg,
+            snap.hdop,
+            imu=self.imu.latest_sample() if self.imu.available else None)
+
     def tick(self, now_ms: int) -> GpsSnapshot:
         """One pass of the firmware's loop(): snapshot, clock, zone, state
         machine, and a CSV row when one is due."""
         snap = take_gps_snapshot(self.gps, self.guard, now_ms)
         self.snapshot = snap
         self.last_tick_ms = now_ms
+        if snap.fix_valid and self.trip_started_ms is None:
+            self.trip_started_ms = now_ms
         self.clock.sync_from_gps(snap.utc_valid, snap.utc_epoch_ms, now_ms)
         self.location_time.update(snap.latitude, snap.longitude,
                                   snap.position_fresh, snap.speed_kmh, now_ms)
@@ -104,6 +301,9 @@ class LoggerApp:
         self.last_utc_ms = utc_ms
         now_utc = utc_ms // 1000 if utc_ms is not None else 0
         self.machine.update(snap, now_ms, now_utc)
+        if self._system_at is None or now_ms - self._system_at >= 2000:
+            self._system_at = now_ms
+            self.system.sample()
         self.imu.update(now_ms)
         self.obd.update(now_ms)  # extension point: result unused for now
         self.dino.update(now_ms, snap.speed_kmh if snap.speed_fresh else 0.0, 160)
@@ -130,8 +330,11 @@ class LoggerApp:
         return self.telemetry.append(date, row, now_ms)
 
     # ------------------------------------------------------------------
-    def create_waypoint(self, now_ms: Optional[int] = None) -> str:
-        """Waypoint key. Returns the on-screen message."""
+    def create_waypoint(self, now_ms: Optional[int] = None,
+                        category: str = "GENERIC") -> str:
+        """Waypoint key, or MarkWaypoint from the M5Dial with its category.
+        Returns the on-screen message; last_waypoint_id is the new ID or ''."""
+        self.last_waypoint_id = ""
         if now_ms is None:
             now_ms = self.last_tick_ms
         snap = self.snapshot
@@ -161,9 +364,11 @@ class LoggerApp:
             if not snap.fix_valid and not photo_reference:
                 self.waypoint_message = "PHOTO ERROR"
                 return self.waypoint_message
+            if photo_reference:
+                self._tag_photo(photo_reference, snap, utc_ms, offset_s)
             record = self.waypoints.create(
                 snap, utc_ms, offset_s,
-                category="GENERIC" if snap.fix_valid else "PHOTO",
+                category=category if snap.fix_valid else "PHOTO",
                 road_type=self.vehicle["road_type"],
                 road_surface=self.vehicle["road_surface"],
                 vehicle_setup=self.vehicle,
@@ -179,10 +384,91 @@ class LoggerApp:
                               file=sys.stderr)
                 self.waypoint_message = "WRITE FAILED"
             else:
+                self.last_waypoint_id = record["id"]
                 self.waypoint_message = record["id"] + " SAVED"
                 if self.camera_message == "PHOTO ERROR":
                     self.waypoint_message += " PHOTO ERROR"
         return self.waypoint_message
+
+    # -- CAMERA and GALLERY pages ------------------------------------------
+    def _tag_photo(self, photo_reference: str, snap: GpsSnapshot,
+                   utc_ms: Optional[int], offset_s: int) -> bool:
+        """Write the GPS fix and capture time into the photo's EXIF."""
+        have_position = snap.fix_valid and snap.position_fresh
+        payload = exif.build_exif(
+            utc_ms, offset_s,
+            latitude=snap.latitude if have_position else None,
+            longitude=snap.longitude if have_position else None,
+            altitude_m=snap.altitude_m if snap.altitude_fresh else None,
+            speed_kmh=snap.speed_kmh if snap.speed_fresh else None,
+            course_deg=snap.course_deg if snap.course_fresh else None,
+            hdop=snap.hdop if snap.hdop_valid else None,
+            satellites=snap.satellites if snap.satellites_valid else None,
+            software="JP226 GPS-IMU Logger " + __version__)
+        try:
+            exif.write_exif(self.camera.path_of(photo_reference), payload)
+            return True
+        except (OSError, ValueError) as exc:
+            print("photo EXIF: {}".format(exc), file=sys.stderr)
+            return False
+
+    def photo_name(self, utc_ms: Optional[int], offset_s: int) -> str:
+        """IMG_YYYYMMDD_HHMMSS (local time), unique in the photo folder."""
+        if utc_ms is not None:
+            base = civil_from_epoch(utc_ms // 1000, offset_s).strftime(
+                "IMG_%Y%m%d_%H%M%S")
+        else:
+            base = "IMG_NOCLOCK_{}".format(int(time.time()))
+        name, n = base, 1
+        while os.path.exists(os.path.join(self.camera.photo_dir, name + ".jpg")):
+            n += 1
+            name = "{}_{}".format(base, n)
+        return name
+
+    def take_photo(self, now_ms: Optional[int] = None) -> str:
+        """CAMERA page: a photo only (no waypoint), with GPS in its EXIF."""
+        if now_ms is None:
+            now_ms = self.last_tick_ms
+        snap = self.snapshot
+        utc_ms = self.clock.now_utc_ms(now_ms)
+        offset_s = self.location_time.offset_at(utc_ms // 1000) if utc_ms else 0
+        if not self.camera.available:
+            self.photo_message = "NO CAMERA"
+            return self.photo_message
+        try:
+            reference = self.camera.capture_named(self.photo_name(utc_ms, offset_s))
+        except (OSError, RuntimeError) as exc:
+            print("photo: {}".format(exc), file=sys.stderr)
+            self.photo_message = "PHOTO ERROR"
+            return self.photo_message
+        tagged = self._tag_photo(reference, snap, utc_ms, offset_s)
+        self.last_photo = reference.split("/")[-1]
+        self.gallery_index = 0
+        self.photo_message = "SAVED" + ("" if snap.fix_valid and tagged
+                                        else " (NO GPS)")
+        return self.photo_message
+
+    def camera_page(self, active: bool) -> None:
+        """Start the live preview while the CAMERA page is shown."""
+        if active and not self.camera.live.running:
+            self.camera.live.start()
+        elif not active and self.camera.live.running:
+            self.camera.live.stop()
+
+    def gallery_photos(self):
+        return self.camera.list_photos()
+
+    def gallery_step(self, delta: int) -> None:
+        count = len(self.gallery_photos())
+        self.gallery_index = (self.gallery_index + delta) % count if count else 0
+
+    # -- SHARE page hotspot ------------------------------------------------
+    def toggle_hotspot(self) -> None:
+        """Hotspot on also turns the web page on: that is what it is for."""
+        if not self.hotspot.active and not self.web.running:
+            self.toggle_share()
+        self.hotspot.toggle()
+        self._share_urls_at = None
 
     def select_vehicle_setting(self, delta: int) -> None:
         self.vehicle_selection = (
@@ -193,122 +479,92 @@ class LoggerApp:
         if vehicle_settings.adjust(self.vehicle, field, delta):
             self.store.put(vehicle_setup=self.vehicle)
 
+    def toggle_gps_source(self) -> str:
+        """Step through LoRa Cap, Grove and AtomS3 GPS; saved at once.
+        The caller restarts the serial reader and applies the power rails."""
+        self.gps_source = gps_power.next_source(self.gps_source)
+        self.store.put(gps_source=self.gps_source)
+        self.gps_power_status = ""
+        return self.gps_source
+
+    # -- SHARE page: Wi-Fi web server + nightly KML/GPX export -------------
+    def local_date_today(self) -> Optional[str]:
+        utc_ms = self.last_utc_ms
+        if utc_ms is None:
+            return None
+        utc_s = utc_ms // 1000
+        return local_date_text(utc_s, self.location_time.offset_at(utc_s))
+
+    def start_services(self) -> None:
+        """Live mode only: nightly exporter, and the web server if enabled."""
+        self.exporter.start()
+        if self.share_enabled:
+            self.web.start()
+
+    def toggle_share(self) -> None:
+        self.share_enabled = not self.share_enabled
+        self.store.put(share_enabled=self.share_enabled)
+        if self.share_enabled:
+            self.web.start()
+        else:
+            self.web.stop()
+        self._share_urls_at = None
+
+    def change_zip_days(self, delta: int) -> None:
+        choices = webshare.ZIP_DAY_CHOICES
+        self.zip_days = choices[(choices.index(self.zip_days) + delta) % len(choices)]
+        self.store.put(zip_days=self.zip_days)
+
+    def export_now(self) -> None:
+        if self.exporter.is_alive():
+            self.exporter.request_now()
+        else:
+            self.exporter.run_once(include_today=True)
+
+    def share_urls(self, now_ms: int):
+        if self._share_urls_at is None or now_ms - self._share_urls_at > 10_000:
+            # Listed even while the server is off, so the address is known.
+            self._share_urls = self.web.labelled_urls()
+            self._share_urls_at = now_ms
+        return self._share_urls
+
     def press_dino(self, now_ms: int) -> None:
         self.dino.press(now_ms)
 
     def toggle_dino_character(self) -> None:
         self.dino.toggle_character()
 
-    def select_obd_option(self, delta: int) -> None:
-        self.obd_selection = (self.obd_selection + delta) % 3
+    def select_obd_profile_field(self, delta: int) -> None:
+        self.obd_selection = (
+            self.obd_selection + delta) % len(vehicle_settings.PROFILE_FIELD_LABELS)
 
-    def adjust_obd_option(self, delta: int) -> None:
-        if self.obd_selection == 0:
-            index = obdscan.LINK_CHOICES.index(self.obd_link)
-            self.obd_link = obdscan.LINK_CHOICES[
-                (index + delta) % len(obdscan.LINK_CHOICES)]
-            self.store.put(obd_link=self.obd_link)
-        elif self.obd_selection == 1:
-            protocols = tuple(obdscan.PROTOCOL_LABELS)
-            index = protocols.index(self.obd_protocol)
-            self.obd_protocol = protocols[
-                (index + delta) % len(protocols)]
-            self.store.put(obd_protocol=self.obd_protocol)
-        else:
-            self.obd_full_scan = not self.obd_full_scan
-            self.store.put(obd_full_scan=self.obd_full_scan)
+    def adjust_obd_profile(self, delta: int) -> None:
+        field = vehicle_settings.PROFILE_FIELD_LABELS[self.obd_selection][0]
+        if vehicle_settings.adjust_profile(self.obd_profile, field, delta):
+            self.obd_message = "UNSAVED CHANGES"
 
-    def start_obd_scan(self) -> None:
-        if self._obd_thread is not None and self._obd_thread.is_alive():
-            self.obd_scan_status = "SCAN ALREADY RUNNING"
-            return
-        cfg = dict(obdscan.DEFAULTS)
-        cfg.update({
-            "link": self.obd_link,
-            "protocol": self.obd_protocol,
-            "steps": ("adapter,standard,modules,dids" if self.obd_full_scan
-                      else "adapter,standard"),
-            "out_dir": os.path.join(self.data_dir, "obd_scans"),
-        })
-        config_path = os.path.join(self.data_dir, "obd_scan.cfg")
-        if os.path.isfile(config_path):
-            try:
-                configured = obdscan.load_config(config_path)
-            except (OSError, ValueError) as exc:
-                self.obd_scan_status = "CONFIG ERROR"
-                self.obd_scan_progress = str(exc)
-                return
-            configured.update({
-                "link": self.obd_link,
-                "protocol": self.obd_protocol,
-                "steps": cfg["steps"],
-                "out_dir": cfg["out_dir"],
-            })
-            cfg = configured
-        self._obd_cancel.clear()
-        self.obd_scan_status = "STARTING"
-        self.obd_scan_progress = ""
-        self.obd_scan_summary = ""
-        self._obd_thread = threading.Thread(
-            target=self._run_obd_scan, args=(cfg,),
-            name="jp226-obd-scan", daemon=True)
-        self._obd_thread.start()
+    def change_obd_profile_field(self, field: str, delta: int = 1) -> None:
+        """Number-key shortcut: select this profile field and step its value."""
+        fields = [name for name, _label in vehicle_settings.PROFILE_FIELD_LABELS]
+        self.obd_selection = fields.index(field)
+        self.adjust_obd_profile(delta)
 
-    def _run_obd_scan(self, cfg: Dict[str, str]) -> None:
-        transport = None
-        log = None
-        try:
-            transport = obdscan.open_link(cfg)
-            os.makedirs(cfg["out_dir"], exist_ok=True)
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime(
-                "%Y%m%dT%H%M%SZ")
-            log_path = os.path.join(
-                cfg["out_dir"], "obd_scan_{}.jsonl".format(stamp))
-            log = obdscan.ScanLog(log_path)
-            log.write({"step": "start", "link": transport.name,
-                       "config": {k: v for k, v in cfg.items()}})
-            self.obd_scan_status = "SCANNING"
-            scanner = obdscan.Scanner(
-                Elm327(transport), log, cfg,
-                progress=self._set_obd_progress,
-                cancel_event=self._obd_cancel)
-            summary = scanner.run()
-            pids = summary.get("pids")
-            modules = summary.get("modules")
-            if not isinstance(pids, list) or not isinstance(modules, dict):
-                raise RuntimeError("OBD scanner returned an invalid summary")
-            self.obd_scan_summary = "Protocol {}  {} PIDs  {} modules".format(
-                summary.get("protocol") or "--",
-                len(pids), len(modules))
-            self.obd_scan_progress = os.path.basename(log_path)
-            self.obd_scan_status = (
-                "CANCELLED" if summary.get("cancelled") else
-                "NO ECU" if summary.get("protocol") is None else "COMPLETE")
-        except (obdscan.elm327.LinkError, OSError, ValueError, RuntimeError) as exc:
-            self.obd_scan_status = "SCAN ERROR"
-            self.obd_scan_progress = str(exc)
-            print("OBD scan: {}".format(exc), file=sys.stderr)
-        except Exception as exc:
-            self.obd_scan_status = "SCAN ERROR"
-            self.obd_scan_progress = "{}: {}".format(type(exc).__name__, exc)
-            print("OBD scan failed: {}".format(exc), file=sys.stderr)
-        finally:
-            if log is not None:
-                log.close()
-            if transport is not None:
-                transport.close()
+    def save_obd_profile(self) -> None:
+        self.store.put(vehicle_profile=dict(self.obd_profile))
+        self.obd_message = "PROFILE SAVED"
 
-    def _set_obd_progress(self, progress: str) -> None:
-        self.obd_scan_status = "SCANNING"
-        self.obd_scan_progress = progress
+    def connect_obd(self) -> None:
+        self.obd_status = "NOT IMPLEMENTED"
+        self.obd_message = "NO OBD LINK YET"
 
     def close(self) -> None:
-        if self._obd_thread is not None and self._obd_thread.is_alive():
-            self._obd_cancel.set()
-            self._obd_thread.join(timeout=6)
-            if self._obd_thread.is_alive():
-                print("OBD scan did not stop before app shutdown",
-                      file=sys.stderr)
+        self.camera.live.stop()
+        if self.env_reader is not None:
+            self.env_reader.stop()
+        self.web.stop()
+        if self.exporter.is_alive():
+            self.exporter.stop()
+            self.exporter.join(timeout=5)
         self.telemetry.close()
         self.waypoints.close()
 
@@ -366,6 +622,36 @@ class LoggerApp:
             "gps_device": self.source_info.get("device", ""),
             "gps_baud": self.source_info.get("baud", 0),
             "gps_status": self.source_info.get("status", ""),
+            "gps_source": gps_power.LABELS[self.gps_source],
+            "gps_power_status": self.gps_power_status,
+            "bridge_status": self.bridge_status_text(now_ms),
+            "radio_devices": self.radio_devices.rows(
+                now_ms, set(self.controllers.fresh(now_ms))),
+            "bridge_connected": self.bridge.connected(now_ms),
+            "bridge_channel": self.bridge.channel,
+            "system": self.system.values,
+            "env": self.env_readings(),
+            "probes": self.probe_rows(now_ms),
+            "camera_live": self.camera.live.status,
+            "camera_frame": self.camera.live.frame(),
+            "photo_message": self.photo_message,
+            "last_photo": self.last_photo,
+            "gallery_photos": self.gallery_photos(),
+            "gallery_index": self.gallery_index,
+            "photo_dir": self.camera.photo_dir,
+            "hotspot_available": self.hotspot.available,
+            "hotspot_on": self.hotspot.active,
+            "hotspot_busy": self.hotspot.busy,
+            "hotspot_ssid": self.hotspot.ssid,
+            "hotspot_password": self.hotspot.password,
+            "hotspot_address": self.hotspot.address,
+            "hotspot_error": self.hotspot.error,
+            "share_on": self.web.running,
+            "share_error": self.web.error,
+            "share_urls": self.share_urls(now_ms),
+            "share_port": self.web.port,
+            "zip_days": webshare.zip_label(self.zip_days),
+            "export_status": self.exporter.status,
             "sentences_ok": self.gps.sentences_ok,
             "sentences_bad": self.gps.sentences_bad,
             "sentence_counts": dict(self.gps.counts),
@@ -385,15 +671,11 @@ class LoggerApp:
             "dino_best": self.dino.best,
             "dino_status": self.dino.status_text(),
             "obd_selection": self.obd_selection,
-            "obd_settings": [
-                ("ADAPTER", self.obd_link.upper()),
-                ("PROTOCOL", obdscan.PROTOCOL_LABELS[self.obd_protocol]),
-                ("SCAN", "FULL READ-ONLY" if self.obd_full_scan else "QUICK"),
-            ],
-            "obd_scan_status": self.obd_scan_status,
-            "obd_scan_progress": self.obd_scan_progress,
-            "obd_scan_summary": self.obd_scan_summary,
-            "obd_config_path": os.path.join(self.data_dir, "obd_scan.cfg"),
+            "obd_profile": [
+                (label, self.obd_profile[field])
+                for field, label in vehicle_settings.PROFILE_FIELD_LABELS],
+            "obd_status": self.obd_status,
+            "obd_message": self.obd_message,
             "build_git_hash": self.build_info["git_hash"],
             "build_date": self.build_info["build_date"],
             "data_dir": self.data_dir,

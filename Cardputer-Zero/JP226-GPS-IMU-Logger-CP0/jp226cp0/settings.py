@@ -13,12 +13,16 @@ Keys mirror the firmware's logger.cfg where they exist:
 New keys for this port:
   gps_device     serial device, e.g. /dev/ttyAMA0   (default: auto-detect)
   gps_baud       baud rate, e.g. 115200             (default: auto-detect)
+  gps_source     cap | grove | atom: LoRa-1262 GPS Cap, a Grove GPS, or the
+                 AtomS3 USB bridge's GPS Base (default cap; the choice made
+                 on the GPS page is saved and wins)
   data_dir       where CSV files go                 (default: ~/telemetry)
+  web_port       SHARE page web server port         (default: 8226)
   clock_source   auto | gps | system
 
 Environment overrides (win over the file): JP226_CP0_TIMEZONE,
 JP226_CP0_TIMEZONE_AUTO, JP226_CP0_GPS_DEVICE, JP226_CP0_GPS_BAUD,
-JP226_CP0_DATA_DIR, JP226_CP0_CLOCK_SOURCE.
+JP226_CP0_DATA_DIR, JP226_CP0_CLOCK_SOURCE, JP226_CP0_GPS_SOURCE, JP226_CP0_WEB_PORT.
 
 Wi-Fi is NOT configured here (the firmware's wifi_ssid/wifi_password keys are
 deliberately ignored and never stored): the CardputerZero is a Linux machine,
@@ -29,7 +33,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from . import hardware
+from . import gps_power, hardware
 
 ENV_PREFIX = "JP226_CP0_"
 IGNORED_KEYS = ("wifi_ssid", "wifi_password")
@@ -41,7 +45,9 @@ class Settings:
     timezone_auto: bool = True
     gps_device: str = ""          # "" = auto-detect
     gps_baud: int = 0             # 0 = auto-detect
+    gps_source: str = gps_power.CAP   # cap | grove | atom
     data_dir: str = ""            # "" = default_data_dir()
+    web_port: int = 8226          # SHARE page web server
     clock_source: str = hardware.CLOCK_SOURCE_DEFAULT
     config_path: str = ""         # file actually used, "" if none
     warnings: List[str] = field(default_factory=list)
@@ -121,7 +127,7 @@ def load_settings(config_path: Optional[str] = None,
                 "{} ignored: configure Wi-Fi in the operating system".format(key))
 
     for name in ("timezone", "timezone_auto", "gps_device", "gps_baud",
-                 "data_dir", "clock_source"):
+                 "gps_source", "data_dir", "clock_source", "web_port"):
         override = env.get(ENV_PREFIX + name.upper())
         if override is not None and override != "":
             values[name] = override
@@ -136,6 +142,19 @@ def load_settings(config_path: Optional[str] = None,
         else:
             settings.warnings.append("gps_baud ignored (not a number): " + baud)
     settings.data_dir = values.get("data_dir", "")
+    port = values.get("web_port", "")
+    if port:
+        if port.isdigit() and 1 <= int(port) <= 65535:
+            settings.web_port = int(port)
+        else:
+            settings.warnings.append("web_port ignored (1-65535): " + port)
+    if "gps_source" in values:
+        source = gps_power.normalise(values["gps_source"], "")
+        if source:
+            settings.gps_source = source
+        else:
+            settings.warnings.append(
+                "gps_source ignored (use cap, grove or atom): " + values["gps_source"])
     source = values.get("clock_source", settings.clock_source).lower()
     if source in ("auto", "gps", "system"):
         settings.clock_source = source

@@ -5,7 +5,8 @@ Pure standard library (own PNG writer with zlib), so it runs without Pillow:
 
     python -I tools/make_icon.py [output_path]
 
-A placeholder-quality icon: replace it with a designed one before publishing.
+SUPERSEDED: packaging/icon.png is now the designed JP226 Australia/heart/dino
+icon. Running this without an output path overwrites it with the old placeholder.
 """
 
 import math

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+obd_scans/
+*.deb
+build/
+build_stamp.json

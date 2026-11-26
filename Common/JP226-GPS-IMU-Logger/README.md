@@ -63,7 +63,7 @@ release, once it has been tested on every logger including the Cardputer ADV. Th
 `shared/Version.h`; the commit and date are stamped in at build time by
 `shared/version.py`.
 
-The current firmware version is **v0.19**. Increment `version::kNumber` in
+The current firmware version is **v0.22**. Increment `version::kNumber` in
 `shared/Version.h` and update this version reference for each changed firmware
 revision before building/flashing it. Rebuilding or retrying an unchanged
 revision keeps the same version number.
@@ -381,15 +381,18 @@ flowchart LR
   `kLoggerAssignments` in `atoms3_gps_imu/include/AtomConfig.h`. An unlisted
   AtomS3 pairs with the first logger it hears.
 - **M5Dial:** tap on its CONNECTION page to choose CARDPUTER ADV, CARDPUTER,
-  CORE2 or ANY LOGGER. The choice is saved, so moving it to another kit needs
+  CORE2, CP ZERO (the CardputerZero through its AtomS3 bridge) or ANY LOGGER. The choice is saved, so moving it to another kit needs
   no reflash.
 - **Atom Echo:** hold its main button and press the small reset button on the
   side. It restarts, steps to the next logger and says which one ("Pairs with
   Cardputer ADV", "Cardputer", "Core 2" or "any logger"). The choice is saved.
-- **Black box:** hold its button and press reset to toggle between the
-  Cardputer ADV (cyan) and Cardputer v1 (magenta).
-- **Logger:** accepts up to four controllers at once (Dial, Echo, black box
-  and one spare).
+- **Black box:** hold its button and press reset to step through the
+  Cardputer ADV (cyan), Cardputer v1 (magenta) and CardputerZero (violet).
+- **CYD dashboard:** tap its top bar to step through CP ZERO, CARDPUTER ADV,
+  CARDPUTER, CORE2 and ANY LOGGER; saved. See
+  [docs/cyd-dashboard.md](docs/cyd-dashboard.md).
+- **Logger:** accepts up to four controllers at once (for example Dial, Echo,
+  black box and a CYD).
 
 Loggers with firmware older than this report no board type, and accessories
 pair with them as before.
@@ -438,8 +441,9 @@ still on the black box. Unlike the Atom Echo, the Atom Lite has nothing on the
 base's SD pins, so the card is safe to use here.
 
 - **Choose its logger:** hold the button and press the small reset button on
-  the side and select Cardputer ADV (cyan). The accessory firmware's legacy
-  Cardputer v1 choice (magenta) is not supported by the v1 logger profile.
+  the side and select Cardputer ADV (cyan), or CardputerZero (violet) for the
+  Zero through its AtomS3 bridge. The accessory firmware's legacy Cardputer
+  v1 choice (magenta) is not supported by the v1 logger profile.
 - **Button:** tap to save a `BLACKBOX` waypoint on the Cardputer (green flash
   when saved, red if not).
 - **Light:** blue blink while searching, green while recording, amber when
@@ -474,9 +478,16 @@ take 3.3 V. A Grove port only carries 5 V, so take 3.3 V from the device's
 3V3 pin (the bottom header on an Atom, the M-Bus on a Core2). Up to four
 probes can share one port, wired in parallel.
 
+**M5Dial (no 3.3 V pin):** fit the 4.7 kΩ resistor **between the Grove
+cable's yellow and white wires** instead, with the probe's DATA on either of
+them. While searching, the Dial drives the other signal pin to 3.3 V, so the
+resistor becomes the pull-up (firmware v0.22). Without any resistor the
+ESP32's weak internal pull-up is tried, which some short-lead probes accept;
+the Dial's serial log prints `Probes: n on pin p` every 10 s.
+
 | Device | Port | Notes |
 |---|---|---|
-| M5Dial | Port B or Port A | Reading shown on its CONNECTION page |
+| M5Dial | Port B or Port A | Resistor across yellow and white (above). Reading shown on its CONNECTION page |
 | Atom Lite black box | Grove | Also written to its own backup CSV (`probe_c`) |
 | Atom Echo | Grove | Safe: only the Echo's bottom pins clash with an SD card |
 | Core2 | Port A (red, on the Core2) | The GPS is on the DIN base's Port B |
@@ -1068,6 +1079,8 @@ atoms3_gps_imu/           independent AtomS3 + Atomic GPS Base firmware
 m5dial_waypoint/           independent M5Dial control firmware
 atom_echo/                Atom Echo spoken alerts and waypoint button
 atom_blackbox/            Atom Lite + SPK base backup "black box" logger
+atoms3_zero_bridge/       AtomS3 USB bridge: ESP-NOW + GPS for the CardputerZero
+cyd_dashboard/            "Cheap Yellow Display" dashboard and waypoint remote
 docs/                     remote setup and telemetry protocol reference
 logger.cfg.example        optional Starlink/Wi-Fi and timezone configuration
 test/test_schedule/       boundary and persisted-state unit tests

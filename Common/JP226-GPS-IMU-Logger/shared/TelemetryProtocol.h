@@ -31,6 +31,16 @@ enum class ProbeSource : std::uint8_t {
   Logger = 4,  // The logger's own Grove port (Core2, or a Cardputer ADV)
 };
 
+// DialCommandPacket::sender: which kind of controller sent it, so loggers
+// and the AtomS3 bridge can name it. Firmware before v0.22 sends 0.
+enum class ControllerKind : std::uint8_t {
+  Unknown = 0,
+  Dial = 1,
+  Echo = 2,
+  BlackBox = 3,
+  Cyd = 5,
+};
+
 enum class DialAction : std::uint8_t {
   Heartbeat = 0,
   MarkWaypoint = 1,
@@ -76,6 +86,7 @@ enum class LoggerBoard : std::uint8_t {
   Cardputer = 1,
   CardputerAdv = 2,
   Core2 = 3,
+  CardputerZero = 4,  // Through the AtomS3 USB bridge (atoms3_zero_bridge)
 };
 
 inline LoggerBoard beaconBoard(std::uint8_t timeFlags) {
@@ -186,7 +197,8 @@ struct DialCommandPacket {
   PacketHeader header;
   std::uint32_t sequence;
   std::uint8_t action;
-  std::uint8_t reserved0[3];
+  std::uint8_t sender;  // ControllerKind
+  std::uint8_t reserved0[2];
   float value;
   char text[32];
   std::uint32_t crc32;

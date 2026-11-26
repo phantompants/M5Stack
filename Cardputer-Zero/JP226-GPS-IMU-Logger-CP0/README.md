@@ -1,4 +1,7 @@
-# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v0.3)
+# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v2026.11.05)
+
+Release versions use `yyyy.mm.nn`: the sequence starts at `01` each month and
+increments for each release in that month.
 
 A Python 3 port of the [JP226-GPS-IMU-Logger](https://github.com/phantompants/JP226-GPS-IMU-Logger)
 ESP32 firmware: it logs a vehicle's GPS track to daily CSV files, with the same
@@ -40,7 +43,8 @@ Ported faithfully (same constants, from `include/Config.h`):
 | IMU | BMI270 IIO acceleration/gyro feed the unchanged telemetry schema and IMU page |
 | Vehicle setup | On-device presets for road, surface, suspension and load plus per-wheel tyre PSI; saved in `logger_state.json` |
 | Game/version | FOSSIL RECORD shows app/build details and dinosaur art; parked Dino Dash uses an articulated-tail T. rex or brontosaurus and auto-runs above 5 km/h |
-| OBD-II | Read-only scanner supports USB, Wi-Fi, Bluetooth Classic and BLE ELM327 adapters, automatic protocol detection and optional full module/DID discovery |
+| OBD-II | Placeholder only: the OBD page stores a make/model/year vehicle profile and lists planned readings. There is no adapter connection, scanning or OBD logging |
+| Share | SHARE page key 4 starts a read-only Wi-Fi web page (port 8226) for Safari: per-day CSV, KML and GPX links and a ZIP of the last N days with waypoint photos. KML/GPX are rebuilt nightly in `~/telemetry/exports/` |
 | Settings | `key=value` file mirrors `logger.cfg` (`timezone`, `timezone_auto`) |
 
 `telemetry_source` remains `LOCAL_GPS`. The 63-column telemetry header is
@@ -57,24 +61,84 @@ or web portal in this base.
 
 ## Hardware status and remaining checks
 
-- **GPS:** the Cap GPS receiver is visible through the Linux serial interface;
-  DIAG shows the detected port, baud and NMEA counters.
+- **GPS:** three sources. Choose one with key 4 on the GPS page (saved on the
+  device) or `gps_source=cap|grove|atom` in `logger.cfg`. The first two share
+  the Zero's only pin UART (CM0 GPIO14/15, `/dev/serial0 -> /dev/ttyS0`):
+  - **LORA CAP** (default): the Cap LoRa-1262 GPS at 115200 baud. The app turns
+    on its EXT 5V supply (`/sys/class/leds/ext_5v_out`); without it the Cap GPS
+    sends nothing. Verified on the device 2026-11-25.
+  - **GROVE**: a Grove GPS unit on the Zero's own HY2.0-4P port. The app
+    switches the port to UART (`grove_fun` low), turns on Grove 5V
+    (`grove_5v_out`) and tries 9600 baud first. It turns EXT 5V off so the two
+    receivers never share the RX line. Not usable with the NFC/Sub-1GHz Cap:
+    see below.
+  - **ATOMS3 USB**: the AtomS3 bridge on an Atomic GPS Base, plugged into a
+    Zero USB port (`/dev/ttyACM0`). Its GPS Base NMEA comes over USB, so this
+    is the source to use with the **NFC/Sub-1GHz (CC1101) Cap** fitted. Checked
+    on the device 2026-11-26: that Cap drives a ~130 kHz clock onto GPIO15
+    (UART RX), which stops both the Cap and Grove GPS, and the Grove socket on
+    the Cap itself goes to GPIO3 (I2C1 SCL), not the UART.
+  The power controls need the `gpio` group, which the package adds for `pi`.
+  DIAG shows `GPS PWR`; the GPS page shows the chosen source.
 - **Display:** `/dev/fb0` is confirmed at 320x170, 16 bpp (RGB565).
 - **IMU:** BMI270 is read through Linux IIO at its reported acceleration and
   angular-velocity scales. If no BMI270 is present, desktop use falls back to
   the null reader and shows the reason on DIAG when sensor initialization fails.
-- **Camera:** the built-in IMX219 is available at `/dev/video0`; waypoint photos
-  use `rpicam-still` and are stored under `~/telemetry/photos/`. With no GPS fix,
-  the app saves a photo-only waypoint with blank coordinates. If capture fails,
-  a GPS-valid waypoint is still saved and the error is shown/logged.
+- **Camera:** the built-in IMX219. Photos go to `~/telemetry/photos/` at
+  1640x1232 with the GPS fix in their EXIF (position, altitude, UTC time,
+  speed, course, DOP, satellites) and the local capture time, so iPhone
+  Photos and Google Earth place them on the map. Verified on the device
+  2026-11-26.
+  - **WAYPOINT** page: W/Enter or 7 saves a waypoint with a photo
+    (`rpicam-still`). With no GPS fix it saves a photo-only waypoint with
+    blank coordinates; if capture fails, a GPS-valid waypoint is still saved.
+  - **CAMERA** page: a live preview (picamera2, about 13 frames/s) with fix,
+    satellites, position and time beside it. 7 or Enter takes a photo only,
+    no waypoint, named `IMG_YYYYMMDD_HHMMSS.jpg` in local time.
+  - **GALLERY** page: browse the photos, newest first (4/5 or Up/Down), with
+    the position read back from each photo.
+- **ENV page:** an M5Stack ENV unit on the Grove port (ENV III: SHT30 +
+  QMP6988; ENV IV: SHT40 + BMP280) shows temperature, humidity and pressure.
+  Key 4 switches the Grove port to I2C and turns Grove 5V on; it is refused
+  while the GPS source is GROVE, because a GPS on that bus would disturb the
+  Zero's own I2C devices. The right half lists the DS18B20 probe temperatures
+  the Dial, Atom Echo and black box send through the AtomS3. The ENV unit
+  drivers are unit-tested against datasheet examples but not yet tried on the
+  device.
 - **Keyboard:** Left/Right or Z/C and Tab/brackets change pages. On SETUP and
-  OBD SCAN, Up/Down or F/X select an option; W/E change it. On DINO DASH, B
+  OBD, Up/Down or F/X select an option; W/E change it. On DINO DASH, B
   switches between T. rex and brontosaurus; Space/Enter/semicolon jumps.
   `W` or Enter saves a waypoint on other pages; Esc/Q quits.
-- **AtomS3:** the Zero already has a BMI270, so an AtomS3 is not needed for
-  local IMU. It could provide ESP-NOW as a radio coprocessor, but that requires
-  separate bridge firmware and a confirmed Grove transport; this release does
-  not claim AtomS3-to-Linux ESP-NOW support.
+- **Number keys:** 4-8 act within the current page and never change pages.
+  The footer shows only the actions that page offers, coloured by type:
+  navigation blue, edit/select yellow, save green, unavailable gray. 7 saves a
+  waypoint/photo on SPEED, GPS, IMU, LOGGER, WAYPOINT, DIAG and FOSSIL RECORD
+  and saves the setup on SETUP. On OBD: 4 make, 5 model, 6 year, 7 save
+  profile, 8 shows that the OBD connection is not implemented.
+- **AtomS3 bridge:** an AtomS3 running `atoms3_zero_bridge` from the ESP32
+  repo (see its `docs/zero-bridge.md`) connects by USB, not Grove. It sends the
+  ESP-NOW beacon for the Dial, Echo and black box, and lists the devices it
+  hears on its own screen. The app reads its status (DIAG `ATOMS3`, with the
+  number of paired Dials), sends it the time once a second and tells it
+  whether to forward GPS. The app works without it and picks it up when it is
+  plugged in. Verified on the device 2026-11-26: the app reads the bridge
+  status and its GPS NMEA, and the AtomS3 shows ZERO USB while the app runs.
+- **FOSSIL RECORD page:** version, build and the dinosaurs on the left; a
+  system monitor on the right: CPU, SoC temperature, RAM, free storage,
+  battery (BQ27220 gauge: percent, volts, charging) and uptime. The battery
+  level is also sent to the AtomS3, so the Dial and CYD show it.
+- **ESP-NOW page:** every JP226 device the AtomS3 hears (Dial, Echo, black
+  box, CYD, Atom GPS nodes, other loggers), with type, MAC, signal, time
+  since last heard and PAIRED for controllers the app is answering. Green
+  under 5 s, orange under 30 s, grey after; gone after 2 minutes.
+- **M5Dial:** through the AtomS3 the app answers the Dial like the ESP32
+  logger: waypoints (with the Dial's category), road, surface, tyre pressures
+  (front sets FL and FR, rear sets RL and RR), suspension and load, all saved.
+  It sends the Dial its status twice a second and a position report once a
+  second. On the Dial, tap the CONNECTION page until the target is `CP ZERO`
+  (or `ANY LOGGER`); this needs Dial firmware v0.21. While the app is not
+  running, the AtomS3 keeps the Dial paired and refuses its commands.
+  Desktop-tested only so far.
 - **LoRa antenna:** keep the external antenna attached whenever the Cap LoRa
   module is powered, even if the logger is not actively using LoRa.
 
@@ -92,12 +156,26 @@ sudo ./run.sh --headless           # log only, status line every 10 s
 python3 jp226_logger.py --gps-device /dev/ttyAMA0 --gps-baud 115200
 ```
 
-Keys: `Left`/`Right` or `z`/`c` (also `Tab`/brackets) navigate pages; `f`/`x`
-mirror Up/Down. `w`/`Enter` saves a waypoint except on SETUP, OBD SCAN and DINO
-DASH; `Esc`/`q` quits. Pages: SPEED, GPS, IMU, LOGGER, WAYPOINT, SETUP, OBD
-SCAN, DIAG, FOSSIL RECORD, and DINO DASH. The SETUP page saves vehicle settings
-immediately. A waypoint automatically captures a photo when `rpicam-still` is
-available, including a photo-only waypoint when GPS has no fix.
+Keys `4`-`8` are page actions shown in the footer (for example `7` saves a
+waypoint/photo on SPEED, GPS, IMU, LOGGER, WAYPOINT, DIAG and FOSSIL RECORD);
+they never change pages. `Left`/`Right` or `z`/`c` (also `Tab`/brackets)
+navigate pages; `f`/`x` mirror Up/Down. `w`/`Enter` saves a waypoint except on
+SETUP, OBD and DINO DASH; `Esc`/`q` quits. Pages: SPEED, GPS, IMU, LOGGER,
+SHARE, WAYPOINT, SETUP, OBD, DIAG, FOSSIL RECORD, and DINO DASH. The SETUP page
+saves vehicle settings immediately. A waypoint automatically captures a photo
+when `rpicam-still` is available, including a photo-only waypoint when GPS has
+no fix.
+
+The Cap GPS is wired to UART1 (`G14=TXD1`, `G15=RXD1`); auto-detection probes
+`/dev/ttyAMA1` and `/dev/ttyS1` as well as the usual Linux serial aliases. Check
+the OS UART profile if these nodes are missing. Useful read-only checks:
+
+```bash
+ls -l /dev/serial0 /dev/ttyAMA1 /dev/ttyAMA0 /dev/ttyS0 /dev/ttyS1 2>/dev/null
+pinctrl get 14
+pinctrl get 15
+systemctl is-active serial-getty@ttyS0.service
+```
 
 On SETUP, Up/Down selects ROAD (`PAVED`, `GRAVEL`, `DIRT`, `TRAIL`), SURFACE
 (`DRY`, `DAMP`, `WET`, `VERY WET`), FL/FR/RL/RR tyre PSI, front/rear suspension
@@ -107,13 +185,8 @@ NORMAL suspension and LIGHT load. Tire PSI changes by 1. Dino Dash runs
 automatically above 5 km/h and becomes playable below 3 km/h; B toggles the
 T. rex/brontosaurus, and Space, Enter or semicolon jumps.
 
-The OBD SCAN page offers USB, Wi-Fi, Bluetooth Classic and BLE adapters,
-automatic or common ELM327 protocol selection, and a quick standard-PID scan
-or a full read-only module/DID scan. Press Enter to start. Full scans may take
-up to the configured 90-minute budget. Adapter host/address options can be
-set in `~/telemetry/obd_scan.cfg`; copy `obd_scan.cfg.example` from the installed
-app directory to start. The scanner only sends read-only OBD services and
-adapter setup commands; it does not code, clear or write ECU settings.
+The OBD page is a placeholder for future OBD-II readings; see
+[OBD-II placeholder](#obd-ii-placeholder).
 
 ## Build an AppStore-compatible package
 
@@ -174,60 +247,87 @@ password in this repository.
 
 - IMU: [`jp226cp0/imu.py`](jp226cp0/imu.py) implements the BMI270 IIO reader;
   other hosts without that sensor use `NullImu`.
-- AtomS3 ESP-NOW bridge: not implemented. Grove bus/pin and bridge protocol
-  must be verified before adding firmware or claiming support.
-- OBD-II: the on-device OBD SCAN page and [`jp226cp0/obdscan.py`](jp226cp0/obdscan.py)
-  provide read-only discovery. Live telemetry logging is not implemented.
+- AtomS3 ESP-NOW bridge: [`jp226cp0/bridge.py`](jp226cp0/bridge.py) handles
+  the link, GPS, time and the Dial; [`jp226cp0/espnow.py`](jp226cp0/espnow.py)
+  packs the JP226 packets. Black box and temperature packets are only counted.
+- OBD-II: not implemented. The OBD page only stores a vehicle profile;
+  [`jp226cp0/obd.py`](jp226cp0/obd.py) is the unused `ObdSource` interface a
+  future adapter connection would implement. For read-only OBD discovery, use
+  the separate `JP226-OBDii-Scanner-CP0` app.
 - Online time-zone lookup: `LocationTime.lookup_online()` is a documented TODO
   (`note_online_lookup()` and the 100 km trust logic are already in and tested).
 
-## OBD-II scanner
+## SHARE: logs and photos to a phone over Wi-Fi
 
-The OBD SCAN page offers the same read-only scanner from the on-device UI. It
-asks the vehicle what it supports, then logs each request and response. The
-standalone CLI remains available for more detailed configuration. The scanner
-only sends adapter (AT/ST) commands and diagnostic read services 01, 09 and 22;
-it refuses ECU coding, clearing, and other write commands.
+1. Put the CardputerZero and the iPhone on the same Wi-Fi network, or press
+   **8** on the SHARE page for the Zero's own hotspot (below).
+2. Open the SHARE page and press **4** (WEB ON). The page shows an address such
+   as `http://192.168.1.220:8226/`; `http://cardputerzero.local:8226/` also
+   works on iPhones.
+3. Open the address in Safari. Each day has Track CSV, Google Earth KML, GPX,
+   Waypoints CSV and Events CSV links. "Download ZIP" bundles the last N days
+   (1, 3, 7, 14, 30 or all; keys **5**/**6** set the default) with their
+   KML/GPX and waypoint photos. Safari saves to Files > Downloads.
 
-```bash
-cp obd_scan.cfg.example obd_scan.cfg          # pick the link and ranges
-python3 -m jp226cp0.obdscan --config obd_scan.cfg
-python3 -m jp226cp0.obdscan --link usb        # vLinker USB, first USB port
-python3 -m jp226cp0.obdscan --demo            # pretend car, no adapter
-```
+KML and GPX files are written to `~/telemetry/exports/track_YYYY-MM-DD.kml` /
+`.gpx`. A background job converts each finished day after local midnight, and
+catches up on days missed while the device was off; key **7** exports now,
+including today. Downloads always rebuild a stale KML/GPX first. Track
+segments break after a gap of more than 5 minutes; waypoints become
+placemarks/`<wpt>`. The telemetry CSV itself is never changed.
 
-Links: `usb` (vLinker USB; most reliable here), `wifi` (join the adapter's
-network first), `bt` (Bluetooth Classic, paired with `bluetoothctl`) and `ble`
-(needs `python3-bleak`). Protocol 0 lets ELM327 auto-detect across common OBD-II
-protocols; protocols 1-9 and A can be selected explicitly. The UI quick scan
-reads adapter details and standard PIDs/Mode 09. The optional full read-only
-scan also checks module addresses 700-7F7 and Mode 22 DIDs, within a configured
-time budget (90 minutes by default). `did_ranges = everything` tries all
-65,536 DIDs per module and can take many hours. Ignition on; engine running is
-best. A vehicle or adapter may not support every protocol or PID.
+**Photos:** the page shows the newest photos, and **All photos** opens the
+gallery. Tap a photo to open it full size, then the share button > **Save to
+Photos**; the GPS location comes with it. **Download all (ZIP)** puts every
+photo in Files.
 
-The log is `obd_scans/obd_scan_<UTC time>.jsonl`: one line per request (raw
-reply lines, and each module's reply decoded as positive, refusal with its
-NRC, no data or error), ending in a summary of modules, VINs and answered
-DIDs. Ctrl+C stops it and still writes the summary. Copy the file off and
-upload it for analysis.
+**Hotspot (key 8):** with no Wi-Fi around, the Zero makes its own network
+(`JP226-CZ-xxxx`, WPA2, password made on the device the first time). The
+SHARE page shows a QR code to scan with the iPhone camera to join, then a
+second one that opens the page (`http://10.42.0.1:8226/`). The hotspot turns
+the web page on too. While it is on, the Zero is off your normal Wi-Fi; key 8
+again turns it off and NetworkManager rejoins. The password lives only in the
+NetworkManager profile `JP226-Hotspot`, never in the app's files. The app
+runs as a background user service that polkit does not count as the logged-in
+user, so the package installs a narrow polkit rule
+(`/usr/share/polkit-1/rules.d/60-jp226-gps-imu-logger-hotspot.rules`) that
+lets `pi` change Wi-Fi; it is removed with the package.
 
-Tested only against the pretend adapter ([`fake_elm.py`](jp226cp0/fake_elm.py))
-so far; nothing has talked to a real adapter yet.
+The server is read-only: it serves only the daily log files, their exports and
+photos, with no login. Turn it off (key 4) on untrusted networks. The
+on/off choice is remembered. Change the port with `web_port` in `logger.cfg`.
+
+## OBD-II placeholder
+
+The OBD page does not connect to an adapter, scan the vehicle or log OBD
+values. It lets you pick a built-in vehicle profile and shows which readings a
+future version plans to add:
+
+- **Profile:** make, model and year from a built-in list of common makes and
+  models; years run from the current year back to 1980. Press 4/5/6 (or F/X to
+  select and W/E to change) and 7 or Enter to save. The profile is kept in
+  `logger_state.json` as `vehicle_profile`.
+- **Planned standard OBD-II readings:** engine RPM, engine load, coolant
+  temperature and fuel level.
+- **Planned vehicle-dependent readings:** TPMS tyre pressure and temperature,
+  12 V battery voltage and ignition times. Many vehicles expose these only
+  through manufacturer-specific data, so availability will vary by vehicle.
+
+None of these values are connected or logged today, and the 63-column
+telemetry CSV schema is unchanged. Key 8 reports that the OBD connection is not
+implemented. For read-only OBD discovery scans, use the separate
+`JP226-OBDii-Scanner-CP0` app.
 
 ## Must be replaced before `czdev publish`
 
 The store rejects placeholders; these are deliberately still placeholders:
 
 1. `store.share_code` in `app-builder.json` is `"TODO"` (replace with 4 letters/digits, unique store-wide).
-2. `store.author.display_name` is `"TODO: real display name"` (replace with the real display name).
-3. `screenshots/*.png` are **renders of synthetic demo data made on a desktop**,
+2. `screenshots/*.png` are **renders of synthetic demo data made on a desktop**,
    not captures from a device: replace them with real device screenshots
    (re-render with `--screenshot` once the UI is tuned on the device).
-4. `packaging/icon.png` is a generated placeholder pin icon (valid 256x256, but not designed).
-5. Confirm the package maintainer/contact field in `packaging/meta.env` is the contact you want displayed in package metadata.
-6. The store requires a short video of the app running on a **real device** for a first release.
-7. Review `permissions` in `app-builder.json` when adding any additional
+3. The store requires a short video of the app running on a **real device** for a first release.
+4. Review `permissions` in `app-builder.json` when adding any additional
    hardware or network behavior.
 
 ## Next-week test checklist
@@ -245,8 +345,8 @@ The store rejects placeholders; these are deliberately still placeholders:
 11. Confirm RTC/system clock behaviour (assumption 6) and that no time ever goes backwards in the CSV.
 12. Check BMI270 values on the IMU page, test camera capture both with and without GPS fix,
     and verify photo references and coordinates in waypoint rows.
-13. Test the OBD SCAN page with a supported adapter, automatic protocol selection,
-    and both quick and full read-only scans.
+13. On the OBD page, pick and save a make/model/year profile, restart the app
+    and check it is kept; check that 8 shows the not-implemented status.
 14. Build and install the `.deb` through AppBuilder; check APPLaunch launches it and as which user.
 15. Replace the placeholders above, capture real screenshots and the demo video.
 
@@ -261,8 +361,12 @@ jp226cp0/tzfallback.py zone table         jp226cp0/posixtz.py    POSIX TZ rule e
 jp226cp0/location_time.py zone selection  jp226cp0/clock.py      GPS-disciplined clock
 jp226cp0/gps_source.py serial detect      jp226cp0/ui.py         Pillow pages
 jp226cp0/framebuffer.py /dev/fb0          jp226cp0/keys.py       evdev keys
+jp226cp0/camera.py     photos + preview   jp226cp0/exif.py       GPS EXIF
+jp226cp0/webshare.py   SHARE web page     jp226cp0/hotspot.py    Wi-Fi hotspot
+jp226cp0/bridge.py     AtomS3 link        jp226cp0/espnow.py     JP226 packets
+jp226cp0/env.py        Grove ENV unit
 tests/                 unittest suite     packaging/             AppBuilder files
-tools/                 demo NMEA + icon generators
+tools/                 demo NMEA + old placeholder icon generators
 ```
 
 ## License

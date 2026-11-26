@@ -41,15 +41,21 @@ def count_valid_sentences(data: bytes) -> int:
 
 def candidate_devices(configured: str = "",
                       candidates=hardware.GPS_SERIAL_CANDIDATES,
-                      exists: Callable[[str], bool] = os.path.exists) -> List[str]:
+                      exists: Callable[[str], bool] = os.path.exists,
+                      realpath: Callable[[str], str] = os.path.realpath
+                      ) -> List[str]:
     """Configured device first (even if it does not exist yet), then the
-    existing candidates, without duplicates."""
+    existing candidates, without aliases of the same serial device."""
     result: List[str] = []
+    seen = set()
     if configured:
         result.append(configured)
+        seen.add(realpath(configured))
     for dev in candidates:
-        if dev not in result and exists(dev):
+        canonical = realpath(dev)
+        if canonical not in seen and exists(dev):
             result.append(dev)
+            seen.add(canonical)
     return result
 
 
@@ -91,6 +97,7 @@ def probe(open_fn: Callable[[str, int], object], device: str, baud: int,
 
 def detect_gps(open_fn: Callable[[str, int], object],
                configured_device: str = "", configured_baud: int = 0,
+               baud_candidates=hardware.GPS_BAUD_CANDIDATES,
                listen_s: float = hardware.GPS_PROBE_LISTEN_SEC,
                min_sentences: int = hardware.GPS_PROBE_MIN_SENTENCES,
                exists: Callable[[str], bool] = os.path.exists,
@@ -98,7 +105,7 @@ def detect_gps(open_fn: Callable[[str, int], object],
                stop: Optional[Callable[[], bool]] = None
                ) -> Optional[Tuple[str, int]]:
     for device in candidate_devices(configured_device, exists=exists):
-        for baud in candidate_bauds(configured_baud):
+        for baud in candidate_bauds(configured_baud, baud_candidates):
             if stop is not None and stop():
                 return None
             if on_try is not None:
@@ -127,7 +134,8 @@ class SerialGpsReader(threading.Thread):
     def __init__(self, now_ms_fn: Callable[[], int], configured_device: str = "",
                  configured_baud: int = 0,
                  open_fn: Callable[[str, int], object] = open_pyserial,
-                 exists: Callable[[str], bool] = os.path.exists):
+                 exists: Callable[[str], bool] = os.path.exists,
+                 baud_candidates=hardware.GPS_BAUD_CANDIDATES):
         super().__init__(name="gps-reader", daemon=True)
         self.lines: "queue.Queue[Tuple[int, str]]" = queue.Queue(maxsize=2000)
         self.now_ms_fn = now_ms_fn
@@ -135,6 +143,7 @@ class SerialGpsReader(threading.Thread):
         self.configured_baud = configured_baud
         self.open_fn = open_fn
         self.exists = exists
+        self.baud_candidates = tuple(baud_candidates)
         self.device = ""
         self.baud = 0
         self.status = "STARTING"
@@ -158,7 +167,9 @@ class SerialGpsReader(threading.Thread):
                 found = (self.configured_device, self.configured_baud)
             else:
                 found = detect_gps(self.open_fn, self.configured_device,
-                                   self.configured_baud, exists=self.exists,
+                                   self.configured_baud,
+                                   baud_candidates=self.baud_candidates,
+                                   exists=self.exists,
                                    on_try=self._set_trying,
                                    stop=self._stop_event.is_set)
             if found is None:

@@ -27,7 +27,8 @@ constexpr uint32_t kStatusStaleMs = 5000;
 // with any logger. The choice is saved.
 constexpr telemetry::LoggerBoard kTargetBoards[] = {
     telemetry::LoggerBoard::CardputerAdv, telemetry::LoggerBoard::Cardputer,
-    telemetry::LoggerBoard::Core2, telemetry::LoggerBoard::Unknown};
+    telemetry::LoggerBoard::Core2, telemetry::LoggerBoard::CardputerZero,
+    telemetry::LoggerBoard::Unknown};
 constexpr size_t kTargetBoardCount =
     sizeof(kTargetBoards) / sizeof(kTargetBoards[0]);
 // Read by the receive callback; a single byte, so no lock is needed.
@@ -181,6 +182,7 @@ void sendCommand(telemetry::DialAction action, const char* text = "",
   telemetry::preparePacket(packet, telemetry::PacketType::DialCommand);
   packet.sequence = nextSequence++;
   packet.action = static_cast<uint8_t>(action);
+  packet.sender = static_cast<uint8_t>(telemetry::ControllerKind::Dial);
   packet.value = value;
   std::snprintf(packet.text, sizeof(packet.text), "%s", text);
   telemetry::sealPacket(packet);
@@ -327,15 +329,27 @@ float firstProbeCelsius() {
 void sendTemperatures(uint32_t nowMs) {
   static uint32_t lastMs = 0;
   static uint32_t sequence = 0;
-  if (!paired || nowMs - lastMs < 10'000) return;
+  if (nowMs - lastMs < 10'000) return;
   lastMs = nowMs;
+  // Every 10 s on serial, linked or not, so a missing probe shows up.
+  const char* outcome = "not linked";
   telemetry::TemperatureReportPacket report{};
-  if (!makeTemperatureReport(probes, telemetry::ProbeSource::Dial, sequence++,
-                             report)) {
-    return;
+  if (paired) {
+    if (!makeTemperatureReport(probes, telemetry::ProbeSource::Dial,
+                               sequence, report)) {
+      outcome = "no probe, nothing sent";
+    } else {
+      ++sequence;
+      outcome = esp_now_send(peerMac,
+                             reinterpret_cast<const uint8_t*>(&report),
+                             sizeof(report)) == ESP_OK
+                    ? "sent"
+                    : "send failed";
+    }
   }
-  esp_now_send(peerMac, reinterpret_cast<const uint8_t*>(&report),
-               sizeof(report));
+  Serial.printf("Probes: %d on pin %d (searched G1, G2, G13, G15), "
+                "first %.2f C, report %s\n",
+                probes.count(), probes.pin(), firstProbeCelsius(), outcome);
 }
 
 void cycleTargetBoard() {
@@ -612,6 +626,8 @@ const char* loggerName(uint8_t board) {
     case telemetry::LoggerBoard::Cardputer: return "CARDPUTER";
     case telemetry::LoggerBoard::CardputerAdv: return "CARDPUTER ADV";
     case telemetry::LoggerBoard::Core2: return "CORE2";
+    // The CardputerZero, through its AtomS3 USB bridge.
+    case telemetry::LoggerBoard::CardputerZero: return "CP ZERO";
     default: return "LOGGER";
   }
 }
@@ -800,7 +816,10 @@ void setup() {
       "target", static_cast<uint8_t>(telemetry::LoggerBoard::CardputerAdv));
   dinoGame.setBest(preferences.getUShort(dino::kBestKey, 0));
   // DS18B20 probes on Port B (G1/G2) or Port A (G13/G15).
-  probes.begin({1, 2, 13, 15});
+  // Port B (G1/G2), then Port A (G13/G15). The Dial's Grove ports have no
+  // 3.3 V pin, so a 4.7 kOhm resistor between a cable's two signal wires
+  // is the probe's pull-up, with the other signal pin driven high.
+  probes.begin({1, 2, 13, 15}, true, true);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   nextSequence = esp_random();

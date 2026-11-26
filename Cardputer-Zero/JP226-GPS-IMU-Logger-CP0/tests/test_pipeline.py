@@ -18,6 +18,8 @@ from jp226cp0.csvlog import COLUMNS, CSV_HEADER, DailyCsv
 from jp226cp0.settings import Settings
 from jp226cp0.waypoints import WAYPOINT_COLUMNS, WAYPOINT_HEADER
 
+from jp226cp0.imu import NullImu
+
 from .helpers import nmea_burst, utc_ms
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,6 +47,14 @@ def drive_lines(start=(2026, 10, 20, 1, 30, 0), parked_before=10, moving=20,
     return lines
 
 
+def no_camera(data_dir):
+    """A camera with no capture command, so tests behave the same on the
+    device (which has rpicam-still) as on a desktop."""
+    camera = CameraCapture(data_dir)
+    camera.command = None
+    return camera
+
+
 def read_rows(path):
     with open(path, newline="", encoding="utf-8") as handle:
         return list(csv.reader(handle))
@@ -60,7 +70,8 @@ class ReplayTests(unittest.TestCase):
     def run_replay(self, lines, **kw):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        app = LoggerApp(Settings(**kw), tmp.name, clock=Clock("gps"))
+        app = LoggerApp(Settings(**kw), tmp.name, clock=Clock("gps"),
+                        imu=NullImu(), camera=no_camera(tmp.name))
         self.addCleanup(app.close)
         replay_lines(app, lines)
         app.close()
@@ -276,7 +287,8 @@ class DailyCsvTests(unittest.TestCase):
 
 class WaypointTests(unittest.TestCase):
     def make_app(self, tmp):
-        app = LoggerApp(Settings(), tmp, clock=Clock("gps"))
+        app = LoggerApp(Settings(), tmp, clock=Clock("gps"), imu=NullImu(),
+                        camera=no_camera(tmp))
         self.addCleanup(app.close)
         return app
 
