@@ -125,7 +125,25 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     # -- routing ---------------------------------------------------------
+    def _host_allowed(self) -> bool:
+        """DNS-rebinding guard: a browser tricked into treating some other
+        domain name as this device still sends that name as Host. Only IP
+        addresses, localhost and this device's own names are served."""
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host.startswith("["):                       # [IPv6]:port
+            return True
+        name = host.rsplit(":", 1)[0] if ":" in host else host
+        if not name:
+            return True                               # HTTP/1.0, no Host
+        if all(part.isdigit() for part in name.split(".")) and \
+                name.count(".") == 3:
+            return True
+        own = socket.gethostname().lower()
+        return name in ("localhost", own, own + ".local")
+
     def do_GET(self):
+        if not self._host_allowed():
+            return self.send_error(403, "Use the device's address")
         url = urlparse(self.path)
         path = url.path
         try:

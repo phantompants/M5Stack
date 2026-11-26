@@ -269,6 +269,7 @@ void sendCommand(telemetry::DialAction action, const char* text = "") {
   telemetry::preparePacket(packet, telemetry::PacketType::DialCommand);
   packet.sequence = nextSequence++;
   packet.action = static_cast<uint8_t>(action);
+  packet.sender = static_cast<uint8_t>(telemetry::ControllerKind::Cyd);
   std::snprintf(packet.text, sizeof(packet.text), "%s", text);
   telemetry::sealPacket(packet);
   if (esp_now_send(peerMac, reinterpret_cast<const uint8_t*>(&packet),
@@ -334,18 +335,24 @@ double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
   return 2.0 * kEarthRadiusM * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 }
 
+float savedFloat(const char* key) {
+  return preferences.isKey(key) ? preferences.getFloat(key, 0.0f) : 0.0f;
+}
+
 void loadTrips() {
   for (int i = 0; i < 2; ++i) {
     char key[12];
     std::snprintf(key, sizeof(key), "trip%d_m", i);
-    trips[i].meters = preferences.getDouble(key, 0.0);
+    trips[i].meters =
+        preferences.isKey(key) ? preferences.getDouble(key, 0.0) : 0.0;
     std::snprintf(key, sizeof(key), "trip%d_s", i);
-    trips[i].movingS = preferences.getULong(key, 0);
+    trips[i].movingS =
+        preferences.isKey(key) ? preferences.getULong(key, 0) : 0;
     std::snprintf(key, sizeof(key), "trip%d_max", i);
-    trips[i].maxKmh = preferences.getFloat(key, 0.0f);
+    trips[i].maxKmh = savedFloat(key);
   }
-  pitchZero = preferences.getFloat("pitch0", 0.0f);
-  rollZero = preferences.getFloat("roll0", 0.0f);
+  pitchZero = savedFloat("pitch0");
+  rollZero = savedFloat("roll0");
 }
 
 void saveTrips(uint32_t nowMs) {
@@ -508,6 +515,53 @@ void cycleTarget() {
   showMessage(text, TFT_CYAN);
 }
 
+// Changes with every build, so each newly flashed firmware calibrates the
+// touchscreen once on its first start.
+constexpr char kBuildId[] = __DATE__ " " __TIME__;
+
+// LovyanGFX's four-corner calibration: tap the arrow in each corner. The
+// result is saved with the build and the screen orientation it belongs to.
+void calibrateTouch() {
+  display.fillScreen(TFT_BLACK);
+  display.setTextDatum(textdatum_t::middle_center);
+  display.setFont(&fonts::FreeSansBold12pt7b);
+  display.setTextColor(TFT_WHITE);
+  display.drawString("TOUCH SETUP", display.width() / 2,
+                     display.height() / 2 - 24);
+  display.setFont(&fonts::FreeSans9pt7b);
+  display.setTextColor(TFT_LIGHTGREY);
+  display.drawString("Tap the tip of each arrow", display.width() / 2,
+                     display.height() / 2 + 6);
+  display.drawString("as it appears", display.width() / 2,
+                     display.height() / 2 + 26);
+  uint16_t calibration[8];
+  display.calibrateTouch(calibration, TFT_WHITE, TFT_BLACK, 20);
+  preferences.putBytes("cal", calibration, sizeof(calibration));
+  preferences.putString("cal_build", kBuildId);
+  preferences.putUChar("cal_rot", rotation);
+  touchWasDown = true;  // ignore the finger still on the screen
+  holdDone = true;
+  Serial.println("Touch calibrated");
+  showMessage("TOUCH CALIBRATED", TFT_GREEN);
+}
+
+// Saved calibration if it belongs to this build and orientation, else ask.
+void loadOrCalibrateTouch() {
+  uint16_t calibration[8];
+  const bool saved =
+      preferences.isKey("cal") &&
+      preferences.getBytes("cal", calibration, sizeof(calibration)) ==
+          sizeof(calibration) &&
+      preferences.isKey("cal_build") &&
+      preferences.getString("cal_build", "") == kBuildId &&
+      preferences.getUChar("cal_rot", 255) == rotation;
+  if (saved) {
+    display.setTouchCalibrate(calibration);
+  } else {
+    calibrateTouch();
+  }
+}
+
 void flipScreen() {
   rotation = rotation == 0 ? 2 : 0;
   preferences.putUChar("rot", rotation);
@@ -525,6 +579,9 @@ int tripAt(int32_t y) {
 void holdAction(uint32_t nowMs) {
   if (touchDownY < kTopBarHeight) {
     flipScreen();
+    calibrateTouch();  // touch mapping follows the screen orientation
+  } else if (touchDownY < kBodyTop) {
+    calibrateTouch();
   } else if (touchDownY >= kBodyTop && page == Page::Tilt) {
     if (tiltValid) {
       pitchZero = pitchDeg;
@@ -865,6 +922,7 @@ void setup() {
   rotation = preferences.getUChar("rot", 0) == 2 ? 2 : 0;
   display.setRotation(rotation);  // portrait
   display.setBrightness(200);
+  loadOrCalibrateTouch();
   canvas.setColorDepth(8);
   canvasReady = canvas.createSprite(display.width(), display.height()) != nullptr;
 

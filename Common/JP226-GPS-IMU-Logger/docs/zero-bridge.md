@@ -46,8 +46,8 @@ Device types are worked out from what each device sends:
 
 | Packet | Shown as |
 | --- | --- |
-| `DialCommand` | `DIAL/ECHO` |
-| `TemperatureReport` | `M5DIAL`, `ATOM ECHO` or `BLACKBOX`, from its probe source |
+| `DialCommand` | `DIAL`, `ECHO`, `BLACKBOX` or `CYD` from its `sender` byte (firmware v0.22 and later); `CONTROLLER` from older firmware |
+| `TemperatureReport` | `DIAL`, `ECHO` or `BLACKBOX`, from its probe source |
 | `BlackBoxStatus` | `BLACKBOX` |
 | `Telemetry` | `ATOM GPS` (another AtomS3 GPS/IMU node) |
 | `Discovery` | Another logger: `CARDPUTER`, `CP ADV`, `CORE2` or `LOGGER` |

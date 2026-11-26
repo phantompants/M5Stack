@@ -41,6 +41,9 @@ SET_SURFACE = 8
 # LoggerBoard
 BOARD_CARDPUTER_ZERO = 4
 
+# ControllerKind: DialCommandPacket.sender (firmware v0.22 and later).
+CONTROLLER_NAMES = {1: "DIAL", 2: "ECHO", 3: "BLACKBOX", 5: "CYD"}
+
 # PositionFlag
 POSITION_FIX = 1
 POSITION_VALID = 2
@@ -59,7 +62,7 @@ LOG_MODES = {"WAITING_FIX": 0, "MOVING": 1, "STOPPED_15M": 2,
 
 _HEADER = "<IBBH"
 _CRC = "I"
-_COMMAND = struct.Struct(_HEADER + "IB3xf32s" + _CRC)
+_COMMAND = struct.Struct(_HEADER + "IBB2xf32s" + _CRC)
 _STATUS = struct.Struct(_HEADER + "IIIfffBBBB16s12s12s12s32s24sbBBB" + _CRC)
 _ACK = struct.Struct(_HEADER + "IB3x24s" + _CRC)
 _POSITION = struct.Struct(_HEADER + "IQBBBBh2xddffff9f" + _CRC)
@@ -105,13 +108,18 @@ def decode_command(data: bytes) -> Optional[Tuple[int, int, float, str]]:
     if packet_type(data) != DIAL_COMMAND or len(data) != _COMMAND.size:
         return None
     fields = _COMMAND.unpack(data)
-    return fields[4], fields[5], fields[6], _text(fields[7])
+    return fields[4], fields[5], fields[7], _text(fields[8])
+
+
+def command_sender(data: bytes) -> int:
+    """ControllerKind of a DialCommand (0 from firmware before v0.22)."""
+    return data[13] if len(data) == _COMMAND.size else 0
 
 
 def encode_command(sequence: int, action: int, value: float = 0.0,
-                   text: str = "") -> bytes:
+                   text: str = "", sender: int = 0) -> bytes:
     """What an M5Dial sends; used by the tests."""
-    return _seal(_COMMAND, DIAL_COMMAND, sequence, action, value,
+    return _seal(_COMMAND, DIAL_COMMAND, sequence, action, sender, value,
                  _field(text, 32))
 
 

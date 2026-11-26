@@ -221,6 +221,7 @@ bool sendCommand(telemetry::DialAction action, const char* text = "") {
   telemetry::preparePacket(packet, telemetry::PacketType::DialCommand);
   packet.sequence = nextSequence++;
   packet.action = static_cast<uint8_t>(action);
+  packet.sender = static_cast<uint8_t>(telemetry::ControllerKind::Echo);
   std::snprintf(packet.text, sizeof(packet.text), "%s", text);
   telemetry::sealPacket(packet);
   if (esp_now_send(peerMac, reinterpret_cast<const uint8_t*>(&packet),

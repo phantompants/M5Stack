@@ -272,6 +272,18 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(mac, DIAL_MAC)
         self.assertEqual(espnow.decode_ack(ack), (5, True, "WP00001"))
 
+    def test_commands_are_rate_limited(self):
+        controllers = bridge.Controllers()
+        first = controllers.handle_rx(self.fields(espnow.encode_command(
+            1, espnow.MARK_WAYPOINT, 0, "CAMP")), 0, self.execute)
+        flood = controllers.handle_rx(self.fields(espnow.encode_command(
+            2, espnow.MARK_WAYPOINT, 0, "CAMP")), 100, self.execute)
+        later = controllers.handle_rx(self.fields(espnow.encode_command(
+            2, espnow.MARK_WAYPOINT, 0, "CAMP")), 700, self.execute)
+        self.assertTrue(first and later)
+        self.assertEqual(flood, [])
+        self.assertEqual(len(self.calls), 2)
+
     def test_status_every_500_ms_and_position_every_second(self):
         controllers = bridge.Controllers()
         controllers.handle_rx(
@@ -301,11 +313,11 @@ class DialAppTests(unittest.TestCase):
             self.assertEqual(espnow.decode_ack(
                 tx_packets(out, espnow.DIAL_ACK)[0][1]), (1, True, ""))
             self.send(app, espnow.encode_command(
-                2, espnow.SET_TYRE_REAR, 28.4), 10)
+                2, espnow.SET_TYRE_REAR, 28.4), 600)
             self.send(app, espnow.encode_command(
-                3, espnow.SET_SURFACE, 0, "WET"), 20)
+                3, espnow.SET_SURFACE, 0, "WET"), 1200)
             bad = self.send(app, espnow.encode_command(
-                4, espnow.SET_LOAD, 0, "TONNE"), 30)
+                4, espnow.SET_LOAD, 0, "TONNE"), 1800)
             self.assertFalse(espnow.decode_ack(
                 tx_packets(bad, espnow.DIAL_ACK)[0][1])[1])
             self.assertEqual(
@@ -377,14 +389,32 @@ class DeviceTableTests(unittest.TestCase):
         table.note(self.fields(espnow.encode_temperature(1, 3, [(1, 5.0)]),
                                "4C7525A23468"), 2000)
         rows = table.rows(3000, paired={DIAL_MAC})
-        self.assertEqual([r[0] for r in rows], ["BLACKBOX", "DIAL/ECHO", "CP ADV"])
-        self.assertEqual(rows[1], ("DIAL/ECHO", DIAL_MAC, -48, 2000, True))
-        # A temperature report from the Dial names it properly.
+        # Sorted by name, so rows do not jump around as devices are heard.
+        self.assertEqual([r[0] for r in rows], ["BLACKBOX", "CONTROLLER", "CP ADV"])
+        self.assertEqual(rows[1], ("CONTROLLER", DIAL_MAC, -48, 2000, True))
+        # A temperature report from the Dial names it, and an old-firmware
+        # heartbeat (sender 0) keeps that name.
         table.note(self.fields(espnow.encode_temperature(2, 1, [(9, 21.0)]),
                                DIAL_MAC), 3500)
         table.note(self.fields(espnow.encode_command(2, espnow.HEARTBEAT),
                                DIAL_MAC), 4000)
-        self.assertEqual(table.rows(4000)[0][0], "M5DIAL")
+        self.assertEqual([r[0] for r in table.rows(4000)],
+                         ["BLACKBOX", "CP ADV", "DIAL"])
+
+    def test_v022_controllers_name_themselves(self):
+        table = bridge.DeviceTable()
+        for mac, sender in (("8C94DF9247F0", 5), (DIAL_MAC, 1),
+                            ("4C7525A23468", 3)):
+            table.note(self.fields(espnow.encode_command(
+                1, espnow.HEARTBEAT, sender=sender), mac), 0)
+        self.assertEqual([r[0] for r in table.rows(0)],
+                         ["BLACKBOX", "CYD", "DIAL"])
+
+    def test_table_is_capped(self):
+        table = bridge.DeviceTable()
+        for i in range(bridge.MAX_DEVICES + 5):
+            table.note(self.fields(discovery_packet(1), "AABBCC{:06X}".format(i)), i)
+        self.assertEqual(len(table.rows(100)), bridge.MAX_DEVICES)
 
     def test_bad_packets_ignored_and_old_devices_forgotten(self):
         table = bridge.DeviceTable()

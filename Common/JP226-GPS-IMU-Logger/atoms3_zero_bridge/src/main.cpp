@@ -270,7 +270,7 @@ uint32_t rxOverflows = 0;
 uint32_t rxPackets = 0;
 
 enum class Kind : uint8_t {
-  Unknown, Controller, Dial, Echo, BlackBox, GpsImu, Logger
+  Unknown, Controller, Dial, Echo, BlackBox, GpsImu, Logger, Cyd
 };
 
 struct Device {
@@ -288,9 +288,10 @@ Device devices[cfg::kMaxDevices];
 
 const char* deviceName(const Device& device) {
   switch (device.kind) {
-    case Kind::Controller: return "DIAL/ECHO";
-    case Kind::Dial: return "M5DIAL";
-    case Kind::Echo: return "ATOM ECHO";
+    case Kind::Controller: return "CONTROLLER";
+    case Kind::Dial: return "DIAL";
+    case Kind::Echo: return "ECHO";
+    case Kind::Cyd: return "CYD";
     case Kind::BlackBox: return "BLACKBOX";
     case Kind::GpsImu: return "ATOM GPS";
     case Kind::Logger:
@@ -590,7 +591,7 @@ void processPacket(const RxItem& item, uint32_t nowMs) {
   device.rssi = item.rssi;
   ++device.packets;
   const bool specific = device.kind == Kind::Dial || device.kind == Kind::Echo ||
-                        device.kind == Kind::BlackBox;
+                        device.kind == Kind::BlackBox || device.kind == Kind::Cyd;
   const auto type = static_cast<telemetry::PacketType>(item.data[5]);
   switch (type) {
     case telemetry::PacketType::Discovery:
@@ -606,7 +607,18 @@ void processPacket(const RxItem& item, uint32_t nowMs) {
       device.kind = Kind::GpsImu;
       break;
     case telemetry::PacketType::DialCommand:
-      if (!specific) device.kind = Kind::Controller;
+      if (item.length == sizeof(telemetry::DialCommandPacket)) {
+        switch (static_cast<telemetry::ControllerKind>(item.data[13])) {
+          case telemetry::ControllerKind::Dial: device.kind = Kind::Dial; break;
+          case telemetry::ControllerKind::Echo: device.kind = Kind::Echo; break;
+          case telemetry::ControllerKind::BlackBox:
+            device.kind = Kind::BlackBox;
+            break;
+          case telemetry::ControllerKind::Cyd: device.kind = Kind::Cyd; break;
+          default:
+            if (!specific) device.kind = Kind::Controller;
+        }
+      }
       device.controllerMs = nowMs;
       ensurePeer(device);
       if (item.length == sizeof(telemetry::DialCommandPacket) &&

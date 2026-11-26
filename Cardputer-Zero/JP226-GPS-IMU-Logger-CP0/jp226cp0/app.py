@@ -146,6 +146,13 @@ class LoggerApp:
         source, readings = report
         for probe_id, celsius in readings:
             self.probes[(source, probe_id)] = (now_ms, celsius)
+        # Keep the table small: drop probes not heard for 10 minutes, and
+        # the oldest beyond 32.
+        for key in [k for k, (stamp, _c) in self.probes.items()
+                    if now_ms - stamp > 600_000]:
+            del self.probes[key]
+        while len(self.probes) > 32:
+            del self.probes[min(self.probes, key=lambda k: self.probes[k][0])]
 
     def probe_rows(self, now_ms: int):
         """(label, celsius, age ms) per probe heard in the last 10 minutes."""

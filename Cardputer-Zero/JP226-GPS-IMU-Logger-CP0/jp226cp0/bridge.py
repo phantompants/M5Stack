@@ -155,6 +155,10 @@ def tx_body(mac: str, packet: bytes) -> str:
 # is paired while it sent a DialCommand (heartbeats included) in the last 5 s;
 # it gets a DialStatus every 500 ms and a PositionReport every second.
 CONTROLLER_FRESH_MS = 5_000
+# A controller's commands closer together than this are dropped unanswered
+# (the sender retries), so nothing nearby can flood the card with waypoint
+# photos. The M5Dial sends at most one command per user action.
+COMMAND_MIN_INTERVAL_MS = 500
 STATUS_INTERVAL_MS = 500
 POSITION_INTERVAL_MS = 1_000
 MAX_CONTROLLERS = 4
@@ -194,13 +198,16 @@ class Controllers:
                 return []
             for stale in [m for m in self._seen if m not in self.fresh(now_ms)]:
                 del self._seen[stale]
-            entry = self._seen[mac] = [now_ms, None, b""]
+            entry = self._seen[mac] = [now_ms, None, b"", None]
         entry[0] = now_ms
         sequence, action, value, text = command
         if action == espnow.HEARTBEAT:
             return []
         if entry[1] == sequence and entry[2]:
             return [tx_body(mac, entry[2])]
+        if entry[3] is not None and now_ms - entry[3] < COMMAND_MIN_INTERVAL_MS:
+            return []
+        entry[3] = now_ms
         self.commands += 1
         accepted, waypoint_id = execute(action, value, text)
         entry[1] = sequence
@@ -234,7 +241,8 @@ DEVICE_AWAY_MS = 30_000
 DEVICE_FORGET_MS = 120_000
 
 _BOARD_NAMES = {1: "CARDPUTER", 2: "CP ADV", 3: "CORE2", 4: "CP ZERO"}
-_SPECIFIC = ("M5DIAL", "ATOM ECHO", "BLACKBOX")
+_SPECIFIC = ("DIAL", "ECHO", "BLACKBOX", "CYD")
+MAX_DEVICES = 32
 
 
 class DeviceTable:
@@ -255,6 +263,10 @@ class DeviceTable:
         if kind is None:
             return
         mac = fields[1].upper()
+        if mac not in self._devices and len(self._devices) >= MAX_DEVICES:
+            oldest = min(self._devices,
+                         key=lambda m: self._devices[m]["last_ms"])
+            del self._devices[oldest]
         entry = self._devices.setdefault(
             mac, {"kind": "DEVICE", "rssi": rssi, "last_ms": now_ms,
                   "packets": 0})
@@ -270,19 +282,24 @@ class DeviceTable:
         elif kind == espnow.TEMPERATURE_REPORT:
             report = espnow.decode_temperature(data)
             if report is not None:
-                name = {1: "M5DIAL", 2: "ATOM ECHO", 3: "BLACKBOX"}.get(
+                name = {1: "DIAL", 2: "ECHO", 3: "BLACKBOX"}.get(
                     report[0], name)
-        elif kind == espnow.DIAL_COMMAND and name not in _SPECIFIC:
-            name = "DIAL/ECHO"
+        elif kind == espnow.DIAL_COMMAND:
+            sender = espnow.CONTROLLER_NAMES.get(espnow.command_sender(data))
+            if sender:
+                name = sender
+            elif name not in _SPECIFIC:
+                name = "CONTROLLER"
         entry["kind"] = name
 
     def rows(self, now_ms: int, paired=()) -> List[Tuple[str, str, int, int, bool]]:
-        """(type, MAC, rssi, age ms, paired), newest first; old ones dropped."""
+        """(type, MAC, rssi, age ms, paired), sorted by type then MAC so the
+        rows stay put; old ones dropped."""
         for mac in [m for m, e in self._devices.items()
                     if now_ms - e["last_ms"] > DEVICE_FORGET_MS]:
             del self._devices[mac]
         ordered = sorted(self._devices.items(),
-                         key=lambda item: item[1]["last_ms"], reverse=True)
+                         key=lambda item: (item[1]["kind"], item[0]))
         return [(e["kind"], mac, e["rssi"], max(0, now_ms - e["last_ms"]),
                  mac in paired) for mac, e in ordered]
 

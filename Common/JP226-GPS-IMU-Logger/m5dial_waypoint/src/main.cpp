@@ -182,6 +182,7 @@ void sendCommand(telemetry::DialAction action, const char* text = "",
   telemetry::preparePacket(packet, telemetry::PacketType::DialCommand);
   packet.sequence = nextSequence++;
   packet.action = static_cast<uint8_t>(action);
+  packet.sender = static_cast<uint8_t>(telemetry::ControllerKind::Dial);
   packet.value = value;
   std::snprintf(packet.text, sizeof(packet.text), "%s", text);
   telemetry::sealPacket(packet);
@@ -328,15 +329,27 @@ float firstProbeCelsius() {
 void sendTemperatures(uint32_t nowMs) {
   static uint32_t lastMs = 0;
   static uint32_t sequence = 0;
-  if (!paired || nowMs - lastMs < 10'000) return;
+  if (nowMs - lastMs < 10'000) return;
   lastMs = nowMs;
+  // Every 10 s on serial, linked or not, so a missing probe shows up.
+  const char* outcome = "not linked";
   telemetry::TemperatureReportPacket report{};
-  if (!makeTemperatureReport(probes, telemetry::ProbeSource::Dial, sequence++,
-                             report)) {
-    return;
+  if (paired) {
+    if (!makeTemperatureReport(probes, telemetry::ProbeSource::Dial,
+                               sequence, report)) {
+      outcome = "no probe, nothing sent";
+    } else {
+      ++sequence;
+      outcome = esp_now_send(peerMac,
+                             reinterpret_cast<const uint8_t*>(&report),
+                             sizeof(report)) == ESP_OK
+                    ? "sent"
+                    : "send failed";
+    }
   }
-  esp_now_send(peerMac, reinterpret_cast<const uint8_t*>(&report),
-               sizeof(report));
+  Serial.printf("Probes: %d on pin %d (searched G1, G2, G13, G15), "
+                "first %.2f C, report %s\n",
+                probes.count(), probes.pin(), firstProbeCelsius(), outcome);
 }
 
 void cycleTargetBoard() {

@@ -1,4 +1,4 @@
-# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v2026.11.04)
+# JP226 GPS-IMU Logger for the M5Stack CardputerZero (v2026.11.05)
 
 Release versions use `yyyy.mm.nn`: the sequence starts at `01` each month and
 increments for each release in that month.

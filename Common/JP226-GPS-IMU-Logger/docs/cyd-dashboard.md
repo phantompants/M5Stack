@@ -10,21 +10,30 @@ CardputerZero it talks through the AtomS3 USB bridge
 
 ## Screen
 
-The layout is portrait (240x320), with the USB port at the bottom.
+The layout is portrait (240x320), with the USB port at the bottom, and has
+three pages, chosen with the tabs under the top bar: DASH, TILT and TRIPS.
+
+**Touch setup:** the first start after each new firmware shows four arrows,
+one corner at a time; tap the tip of each. The calibration is saved with that
+build and the screen orientation, so it is not asked again until the next
+flash or a flip. Hold the tab strip for 1.5 s to run it again at any time.
 
 | Area | Shows |
 | --- | --- |
 | Top bar | The paired logger and signal strength. While searching: the logger type it looks for and the channel. **Tap it** to change the logger type: CP ZERO (default), CARDPUTER ADV, CARDPUTER, CORE2, ANY LOGGER. **Hold it for 1.5 s** to turn the screen upside down (USB at the top). Both choices are saved |
 | Middle | Speed, fix and satellites, log state, the logger's battery, road type and surface, tyre pressures, the nearby place and the last waypoint |
-| Bottom | WAYPOINT, FUEL, CAMP and HAZARD buttons, 2 x 2: each saves a waypoint with that category on the logger. The message line above them says SAVED with the ID, or why not |
+| DASH | Speed, fix and satellites, log state, the logger's battery, road, surface and tyre pressures, the nearby place and the last waypoint. WAYPOINT, FUEL, CAMP and HAZARD buttons, 2 x 2: each saves a waypoint with that category on the logger; the message line above them says SAVED with the ID, or why not |
+| TILT | Pitch and roll half-dials (green under 20 degrees, orange under 30, red beyond), from the logger's IMU in its once-a-second position report. **Hold** on level ground to zero them for how the logger is mounted (saved). Shows NO TILT DATA if the logger sends none |
+| TRIPS | Two trip meters, A and B: distance, moving time, average and top speed, from the logger's GPS positions (only while moving faster than 2 km/h with a fix, so parked GPS drift is not counted). Saved every 30 s, so they survive power off. **Hold** a trip for 1.5 s to reset it |
 
 The RGB LED on the back blinks blue while searching, stays green while linked
 and flashes red when the logger refuses a waypoint (for example, no fix).
 
 The logger counts the CYD as a controller like the Dial, so it uses one of
-the logger's four controller slots. On the CardputerZero's ESP-NOW page and
-the AtomS3's DEVICES page it shows as `DIAL/ECHO`, because it sends the same
-packets.
+the logger's four controller slots. From firmware v0.22 every controller
+names itself in its commands (`ControllerKind` in `TelemetryProtocol.h`), so
+the CardputerZero's ESP-NOW page and the AtomS3's DEVICES page show it as
+`CYD`.
 
 ## Hardware notes
 

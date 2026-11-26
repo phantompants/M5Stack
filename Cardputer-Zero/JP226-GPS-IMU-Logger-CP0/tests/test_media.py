@@ -143,6 +143,15 @@ class ProbeTests(unittest.TestCase):
                 base64.b64encode(packet).decode())), 1000)
             self.assertEqual(app.probe_rows(3000), [("BLACKBOX 1", 4.25, 2000)])
             self.assertEqual(app.probe_rows(700_000), [])
+            # Old probes are dropped from the table, and it is capped.
+            many = espnow.encode_temperature(2, 1, [(n, 20.0) for n in range(4)])
+            for t in range(10):
+                packet = espnow.encode_temperature(t, 1, [(100 + 4 * t + n, 20.0)
+                                                          for n in range(4)])
+                app.feed_bridge_line(bridge.frame("PJP226,RX,AABBCCDDEEFF,-50,{}".format(
+                    base64.b64encode(packet).decode())), 700_000 + t)
+            self.assertNotIn((3, 7), app.probes)
+            self.assertLessEqual(len(app.probes), 32)
             app.close()
 
 
@@ -293,6 +302,18 @@ class WebGalleryTests(unittest.TestCase):
                                      ["photos/IMG_20261126_143506.jpg"])
                 with self.assertRaises(urllib.error.HTTPError):
                     urllib.request.urlopen(base + "/v/photos/../secret.jpg")
+                # DNS rebinding: a foreign host name is refused.
+                request = urllib.request.Request(
+                    base + "/", headers={"Host": "evil.example:8226"})
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    urllib.request.urlopen(request)
+                self.assertEqual(caught.exception.code, 403)
+                request = urllib.request.Request(
+                    base + "/", headers={"Host": "cardputerzero.local:8226"})
+                import socket
+                own = urllib.request.Request(base + "/", headers={
+                    "Host": socket.gethostname() + ".local:8226"})
+                self.assertEqual(urllib.request.urlopen(own).status, 200)
             finally:
                 share.stop()
 

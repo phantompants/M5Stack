@@ -63,7 +63,7 @@ release, once it has been tested on every logger including the Cardputer ADV. Th
 `shared/Version.h`; the commit and date are stamped in at build time by
 `shared/version.py`.
 
-The current firmware version is **v0.21**. Increment `version::kNumber` in
+The current firmware version is **v0.22**. Increment `version::kNumber` in
 `shared/Version.h` and update this version reference for each changed firmware
 revision before building/flashing it. Rebuilding or retrying an unchanged
 revision keeps the same version number.
